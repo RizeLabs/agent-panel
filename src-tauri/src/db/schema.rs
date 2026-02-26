@@ -44,7 +44,6 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             working_directory TEXT,
             model TEXT DEFAULT 'sonnet',
             max_turns INTEGER DEFAULT 25,
-            max_budget_usd REAL,
             skills TEXT DEFAULT '[]',
             env_vars TEXT DEFAULT '{}',
             status TEXT DEFAULT 'idle',

@@ -12,7 +12,6 @@ pub struct CreateAgentRequest {
     pub working_directory: Option<String>,
     pub model: Option<String>,
     pub max_turns: Option<i64>,
-    pub max_budget_usd: Option<f64>,
     pub skills: Option<Vec<String>>,
     pub env_vars: Option<serde_json::Value>,
 }
@@ -26,7 +25,6 @@ pub struct UpdateAgentRequest {
     pub working_directory: Option<String>,
     pub model: Option<String>,
     pub max_turns: Option<i64>,
-    pub max_budget_usd: Option<f64>,
     pub skills: Option<Vec<String>>,
     pub env_vars: Option<serde_json::Value>,
 }
@@ -45,7 +43,6 @@ pub fn create_agent(
         working_directory: request.working_directory,
         model: request.model.unwrap_or_else(|| "sonnet".to_string()),
         max_turns: request.max_turns.unwrap_or(25),
-        max_budget_usd: request.max_budget_usd,
         skills: serde_json::to_string(&request.skills.unwrap_or_default())
             .unwrap_or_else(|_| "[]".to_string()),
         env_vars: request
@@ -96,7 +93,6 @@ pub fn update_agent(
         working_directory: request.working_directory,
         model: request.model.unwrap_or_else(|| "sonnet".to_string()),
         max_turns: request.max_turns.unwrap_or(25),
-        max_budget_usd: request.max_budget_usd,
         skills: serde_json::to_string(&request.skills.unwrap_or_default())
             .unwrap_or_else(|_| "[]".to_string()),
         env_vars: request

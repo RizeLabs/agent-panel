@@ -66,7 +66,6 @@ pub fn create_coordinator_agent(
         working_directory: None,
         model: "sonnet".to_string(),
         max_turns: 10,
-        max_budget_usd: None,
         skills: "[]".to_string(),
         env_vars: "{}".to_string(),
         status: "idle".to_string(),

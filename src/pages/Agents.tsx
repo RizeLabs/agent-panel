@@ -247,7 +247,6 @@ function AgentConfigModal({
     agent?.working_directory ?? ""
   );
   const [maxTurns, setMaxTurns] = useState(agent?.max_turns ?? 10);
-  const [maxBudget, setMaxBudget] = useState(agent?.max_budget_usd ?? 5);
 
   const isEditing = !!agent;
 
@@ -262,7 +261,6 @@ function AgentConfigModal({
       system_prompt: systemPrompt || undefined,
       working_directory: workingDirectory || undefined,
       max_turns: maxTurns,
-      max_budget_usd: maxBudget,
     };
 
     if (isEditing) {
@@ -369,19 +367,6 @@ function AgentConfigModal({
               min={1}
               value={maxTurns}
               onChange={(e) => setMaxTurns(Number(e.target.value))}
-              className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:ring-1 focus:ring-panel-accent"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-panel-text-dim mb-1">
-              Max Budget (USD)
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={0.5}
-              value={maxBudget}
-              onChange={(e) => setMaxBudget(Number(e.target.value))}
               className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:ring-1 focus:ring-panel-accent"
             />
           </div>

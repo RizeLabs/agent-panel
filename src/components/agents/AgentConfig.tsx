@@ -32,9 +32,6 @@ export default function AgentConfig({ agent, onClose }: AgentConfigProps) {
   const [workingDirectory, setWorkingDirectory] = useState(agent?.working_directory ?? "");
   const [model, setModel] = useState<ModelType>(agent?.model ?? "sonnet");
   const [maxTurns, setMaxTurns] = useState(agent?.max_turns ?? 10);
-  const [maxBudget, setMaxBudget] = useState<string>(
-    agent?.max_budget_usd != null ? String(agent.max_budget_usd) : ""
-  );
 
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
@@ -45,8 +42,6 @@ export default function AgentConfig({ agent, onClose }: AgentConfigProps) {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const budgetValue = maxBudget.trim() !== "" ? parseFloat(maxBudget) : undefined;
-
     if (isEdit && agent) {
       const request: UpdateAgentRequest = {
         id: agent.id,
@@ -56,7 +51,6 @@ export default function AgentConfig({ agent, onClose }: AgentConfigProps) {
         working_directory: workingDirectory.trim() || undefined,
         model,
         max_turns: maxTurns,
-        max_budget_usd: budgetValue,
       };
       updateAgent.mutate(request, { onSuccess: onClose });
     } else {
@@ -67,7 +61,6 @@ export default function AgentConfig({ agent, onClose }: AgentConfigProps) {
         working_directory: workingDirectory.trim() || undefined,
         model,
         max_turns: maxTurns,
-        max_budget_usd: budgetValue,
       };
       createAgent.mutate(request, { onSuccess: onClose });
     }
@@ -167,19 +160,6 @@ export default function AgentConfig({ agent, onClose }: AgentConfigProps) {
               />
             </Field>
           </div>
-
-          {/* Max Budget */}
-          <Field label="Max Budget (USD)">
-            <input
-              type="number"
-              value={maxBudget}
-              onChange={(e) => setMaxBudget(e.target.value)}
-              placeholder="Optional"
-              min={0}
-              step={0.01}
-              className={inputClass}
-            />
-          </Field>
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2">

@@ -12,7 +12,6 @@ pub struct Agent {
     pub working_directory: Option<String>,
     pub model: String,
     pub max_turns: i64,
-    pub max_budget_usd: Option<f64>,
     pub skills: String,
     pub env_vars: String,
     pub status: String,
@@ -24,8 +23,8 @@ pub struct Agent {
 
 pub fn insert_agent(conn: &Connection, agent: &Agent) -> Result<()> {
     conn.execute(
-        "INSERT INTO agents (id, name, role, system_prompt, working_directory, model, max_turns, max_budget_usd, skills, env_vars, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO agents (id, name, role, system_prompt, working_directory, model, max_turns, skills, env_vars, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             agent.id,
             agent.name,
@@ -34,7 +33,6 @@ pub fn insert_agent(conn: &Connection, agent: &Agent) -> Result<()> {
             agent.working_directory,
             agent.model,
             agent.max_turns,
-            agent.max_budget_usd,
             agent.skills,
             agent.env_vars,
             agent.status,
@@ -45,7 +43,7 @@ pub fn insert_agent(conn: &Connection, agent: &Agent) -> Result<()> {
 
 pub fn get_all_agents(conn: &Connection) -> Result<Vec<Agent>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, role, system_prompt, working_directory, model, max_turns, max_budget_usd,
+        "SELECT id, name, role, system_prompt, working_directory, model, max_turns,
                 skills, env_vars, status, pid, session_id, created_at, updated_at
          FROM agents ORDER BY created_at DESC",
     )?;
@@ -59,14 +57,13 @@ pub fn get_all_agents(conn: &Connection) -> Result<Vec<Agent>> {
                 working_directory: row.get(4)?,
                 model: row.get(5)?,
                 max_turns: row.get(6)?,
-                max_budget_usd: row.get(7)?,
-                skills: row.get(8)?,
-                env_vars: row.get(9)?,
-                status: row.get(10)?,
-                pid: row.get(11)?,
-                session_id: row.get(12)?,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
+                skills: row.get(7)?,
+                env_vars: row.get(8)?,
+                status: row.get(9)?,
+                pid: row.get(10)?,
+                session_id: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -75,7 +72,7 @@ pub fn get_all_agents(conn: &Connection) -> Result<Vec<Agent>> {
 
 pub fn get_agent_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, role, system_prompt, working_directory, model, max_turns, max_budget_usd,
+        "SELECT id, name, role, system_prompt, working_directory, model, max_turns,
                 skills, env_vars, status, pid, session_id, created_at, updated_at
          FROM agents WHERE id = ?1",
     )?;
@@ -89,14 +86,13 @@ pub fn get_agent_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> {
                 working_directory: row.get(4)?,
                 model: row.get(5)?,
                 max_turns: row.get(6)?,
-                max_budget_usd: row.get(7)?,
-                skills: row.get(8)?,
-                env_vars: row.get(9)?,
-                status: row.get(10)?,
-                pid: row.get(11)?,
-                session_id: row.get(12)?,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
+                skills: row.get(7)?,
+                env_vars: row.get(8)?,
+                status: row.get(9)?,
+                pid: row.get(10)?,
+                session_id: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -127,8 +123,8 @@ pub fn update_agent_process(
 pub fn update_agent(conn: &Connection, agent: &Agent) -> Result<()> {
     conn.execute(
         "UPDATE agents SET name=?1, role=?2, system_prompt=?3, working_directory=?4, model=?5,
-         max_turns=?6, max_budget_usd=?7, skills=?8, env_vars=?9, updated_at=CURRENT_TIMESTAMP
-         WHERE id=?10",
+         max_turns=?6, skills=?7, env_vars=?8, updated_at=CURRENT_TIMESTAMP
+         WHERE id=?9",
         params![
             agent.name,
             agent.role,
@@ -136,7 +132,6 @@ pub fn update_agent(conn: &Connection, agent: &Agent) -> Result<()> {
             agent.working_directory,
             agent.model,
             agent.max_turns,
-            agent.max_budget_usd,
             agent.skills,
             agent.env_vars,
             agent.id,

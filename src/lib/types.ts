@@ -17,7 +17,6 @@ export interface Agent {
   working_directory: string | null;
   model: ModelType;
   max_turns: number;
-  max_budget_usd: number | null;
   skills: string; // JSON array
   env_vars: string; // JSON object
   status: AgentStatus;
@@ -34,7 +33,6 @@ export interface CreateAgentRequest {
   working_directory?: string;
   model?: string;
   max_turns?: number;
-  max_budget_usd?: number;
   skills?: string[];
   env_vars?: Record<string, string>;
 }

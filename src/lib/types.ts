@@ -138,7 +138,11 @@ export type LogType =
   | "stderr"
   | "tool_use"
   | "status_change"
-  | "error";
+  | "error"
+  | "system"
+  | "assistant"
+  | "result"
+  | "user_input";
 
 export interface AgentLog {
   id: number;
@@ -159,4 +163,11 @@ export interface AgentLogEvent {
 export interface AgentStatusEvent {
   agent_id: string;
   status: AgentStatus;
+}
+
+export interface AgentWaitingEvent {
+  agent_id: string;
+  agent_name: string;
+  waiting: boolean;
+  last_output: string;
 }

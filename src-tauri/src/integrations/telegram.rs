@@ -1,10 +1,11 @@
 use reqwest::Client;
 use serde_json::json;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use teloxide::prelude::*;
 use tokio::sync::Notify;
 
+use crate::agents::manager::{AgentLogPayload, send_agent_input};
 use crate::db::queries;
 use crate::state::AppState;
 
@@ -78,6 +79,51 @@ pub async fn notify_human_needed(
     send_telegram_message(bot_token, chat_id, &message).await
 }
 
+// ─── Waiting-agent routing ───────────────────────────────────
+
+/// Find a waiting agent to route a Telegram reply to.
+///
+/// - If `text` starts with `@agent_name:`, match that specific agent.
+/// - Otherwise, return the oldest-waiting agent that has `notification_sent == true`.
+///
+/// Returns `(agent_id, agent_name)` if found.
+fn find_waiting_agent(state: &AppState, text: &str) -> Option<(String, String)> {
+    let waits = state.input_wait.lock().ok()?;
+    let procs = state.processes.lock().ok()?;
+
+    // Check for explicit @agent_name: prefix
+    if text.starts_with('@') {
+        if let Some(colon_pos) = text.find(':') {
+            let target_name = &text[1..colon_pos];
+            for (agent_id, info) in waits.iter() {
+                if info.agent_name == target_name
+                    && info.notification_sent
+                    && procs.contains_key(agent_id)
+                {
+                    return Some((agent_id.clone(), info.agent_name.clone()));
+                }
+            }
+        }
+    }
+
+    // Fallback: oldest waiting agent with notification_sent
+    let mut oldest: Option<(&str, &str, std::time::Instant)> = None;
+    for (agent_id, info) in waits.iter() {
+        if !info.notification_sent || !procs.contains_key(agent_id) {
+            continue;
+        }
+        match &oldest {
+            None => oldest = Some((agent_id, &info.agent_name, info.last_output_at)),
+            Some((_, _, ts)) if info.last_output_at < *ts => {
+                oldest = Some((agent_id, &info.agent_name, info.last_output_at));
+            }
+            _ => {}
+        }
+    }
+
+    oldest.map(|(id, name, _)| (id.to_string(), name.to_string()))
+}
+
 // ─── Teloxide bot dispatcher ─────────────────────────────────
 
 /// Start a teloxide bot that listens for incoming messages and posts
@@ -104,6 +150,8 @@ pub async fn start_bot(
 
     let bot = Bot::new(&bot_token);
     let allowed_chat_id = chat_id.clone();
+    let bot_token_clone = bot_token.clone();
+    let chat_id_clone = chat_id.clone();
     let handle = app_handle.clone();
     let shutdown = SHUTDOWN.clone();
 
@@ -113,36 +161,127 @@ pub async fn start_bot(
             move |msg: Message, _bot: Bot| {
                 let handle = handle.clone();
                 let allowed = allowed_chat_id.clone();
+                let bot_token_inner = bot_token_clone.clone();
+                let chat_id_inner = chat_id_clone.clone();
                 async move {
-                    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = (|| {
-                        // Only process messages from the configured chat.
-                        let msg_chat_id = msg.chat.id.to_string();
-                        if msg_chat_id != allowed {
-                            log::warn!(
-                                "Ignoring message from unexpected chat {}",
-                                msg_chat_id
-                            );
-                            return Ok(());
+                    // Only process messages from the configured chat.
+                    let msg_chat_id = msg.chat.id.to_string();
+                    if msg_chat_id != allowed {
+                        log::warn!(
+                            "Ignoring message from unexpected chat {}",
+                            msg_chat_id
+                        );
+                        return Ok::<(), Box<dyn std::error::Error + Send + Sync>>(());
+                    }
+
+                    let text = match msg.text() {
+                        Some(t) => t.to_string(),
+                        None => return Ok(()),
+                    };
+
+                    log::info!("Telegram message received: {}", text);
+
+                    // Insert into message bus (existing behavior)
+                    {
+                        let state = handle.state::<AppState>();
+                        let db = state.db.lock().unwrap();
+                        let _ = queries::insert_message(
+                            &db,
+                            "user",
+                            None,
+                            "chat",
+                            &text,
+                            Some("{\"source\":\"telegram\"}"),
+                        );
+                    }
+
+                    // Check if there's a waiting agent to route to
+                    let waiting = {
+                        let state = handle.state::<AppState>();
+                        find_waiting_agent(&state, &text)
+                    };
+
+                    if let Some((agent_id, agent_name)) = waiting {
+                        // Strip @agent_name: prefix if present
+                        let input = if text.starts_with('@') {
+                            if let Some(colon_pos) = text.find(':') {
+                                text[colon_pos + 1..].trim().to_string()
+                            } else {
+                                text.clone()
+                            }
+                        } else {
+                            text.clone()
+                        };
+
+                        // Send input to agent
+                        let state = handle.state::<AppState>();
+                        match send_agent_input(&state, &agent_id, &input).await {
+                            Ok(()) => {
+                                // Log as user_input
+                                if let Ok(db) = state.db.lock() {
+                                    let log_content =
+                                        format!("[via Telegram] {}", input);
+                                    let _ = queries::insert_log(
+                                        &db,
+                                        &agent_id,
+                                        "user_input",
+                                        &log_content,
+                                    );
+                                }
+
+                                let _ = handle.emit(
+                                    "agent-log",
+                                    AgentLogPayload {
+                                        agent_id: agent_id.clone(),
+                                        log_type: "user_input".to_string(),
+                                        content: format!("[via Telegram] {}", input),
+                                    },
+                                );
+
+                                // Emit waiting=false event
+                                let _ = handle.emit(
+                                    "agent-waiting-input",
+                                    crate::agents::input_monitor::AgentWaitingPayload {
+                                        agent_id: agent_id.clone(),
+                                        agent_name: agent_name.clone(),
+                                        waiting: false,
+                                        last_output: String::new(),
+                                    },
+                                );
+
+                                // Send Telegram confirmation
+                                let confirm_msg =
+                                    format!("Sent to agent `{}`", agent_name);
+                                let _ = send_telegram_message(
+                                    &bot_token_inner,
+                                    &chat_id_inner,
+                                    &confirm_msg,
+                                )
+                                .await;
+
+                                log::info!(
+                                    "Routed Telegram reply to agent {}: {}",
+                                    agent_id,
+                                    input
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to route Telegram reply to agent {}: {}",
+                                    agent_id,
+                                    e
+                                );
+                                let _ = send_telegram_message(
+                                    &bot_token_inner,
+                                    &chat_id_inner,
+                                    &format!("Failed to send to agent: {}", e),
+                                )
+                                .await;
+                            }
                         }
+                    }
 
-                        if let Some(text) = msg.text() {
-                            log::info!("Telegram message received: {}", text);
-
-                            let state = handle.state::<AppState>();
-                            let db = state.db.lock().unwrap();
-                            let _ = queries::insert_message(
-                                &db,
-                                "user",
-                                None,
-                                "chat",
-                                text,
-                                Some("{\"source\":\"telegram\"}"),
-                            );
-                        }
-
-                        Ok(())
-                    })();
-                    result
+                    Ok(())
                 }
             },
         );

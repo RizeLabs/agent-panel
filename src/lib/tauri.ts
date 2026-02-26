@@ -5,6 +5,7 @@ import type {
   AgentLog,
   AgentLogEvent,
   AgentStatusEvent,
+  AgentWaitingEvent,
   CreateAgentRequest,
   Knowledge,
   Message,
@@ -163,5 +164,12 @@ export const onAgentStatusChange = (
   callback: (event: AgentStatusEvent) => void
 ): Promise<UnlistenFn> =>
   listen<AgentStatusEvent>("agent-status-change", (event) =>
+    callback(event.payload)
+  );
+
+export const onAgentWaitingInput = (
+  callback: (event: AgentWaitingEvent) => void
+): Promise<UnlistenFn> =>
+  listen<AgentWaitingEvent>("agent-waiting-input", (event) =>
     callback(event.payload)
   );

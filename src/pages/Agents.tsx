@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Bot,
   Plus,
@@ -12,7 +12,7 @@ import {
 import { toast } from "sonner";
 import type { Agent, AgentLog, CreateAgentRequest, ModelType, AgentRole } from "../lib/types";
 import { cn, statusDotColor, timeAgo } from "../lib/utils";
-import { sendAgentInput } from "../lib/tauri";
+import { sendAgentInput, onAgentWaitingInput } from "../lib/tauri";
 import {
   useAgents,
   useCreateAgent,
@@ -145,6 +145,18 @@ function AgentLogPanel({
   const { data: logs, isLoading } = useAgentLogs(agentId);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false);
+
+  useEffect(() => {
+    const unlisten = onAgentWaitingInput((event) => {
+      if (event.agent_id === agentId) {
+        setIsWaiting(event.waiting);
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [agentId]);
 
   const handleSendInput = async () => {
     const text = inputText.trim();
@@ -166,6 +178,10 @@ function AgentLogPanel({
     tool_use: "text-blue-400",
     status_change: "text-panel-warning",
     error: "text-panel-error",
+    system: "text-blue-400",
+    assistant: "text-panel-text",
+    result: "text-cyan-400",
+    user_input: "text-green-400",
   };
 
   return (
@@ -194,6 +210,11 @@ function AgentLogPanel({
             <span className="text-[10px] text-panel-text-dim capitalize">
               {agent.status}
             </span>
+            {isWaiting && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-medium animate-pulse">
+                Waiting for input
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onEdit(agent)}

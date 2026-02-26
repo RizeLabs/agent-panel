@@ -15,6 +15,10 @@ function logTypeColor(logType: LogType): string {
     tool_use: "text-purple-400",
     status_change: "text-panel-warning",
     error: "text-panel-error",
+    system: "text-blue-400",
+    assistant: "text-panel-text",
+    result: "text-cyan-400",
+    user_input: "text-green-400",
   };
   return map[logType] ?? "text-panel-text-dim";
 }
@@ -26,6 +30,10 @@ function logTypeBadge(logType: LogType): string {
     tool_use: "TOOL",
     status_change: "STATUS",
     error: "ERROR",
+    system: "SYS",
+    assistant: "ASST",
+    result: "RESULT",
+    user_input: "INPUT",
   };
   return map[logType] ?? logType.toUpperCase();
 }

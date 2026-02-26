@@ -1,6 +1,6 @@
 use crate::agents::output_parser::{self, StreamEvent};
 use crate::db::queries;
-use crate::state::{AppState, ProcessHandle};
+use crate::state::{AppState, InputWaitInfo, ProcessHandle};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -8,6 +8,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use std::process::Stdio;
+use std::time::Instant;
 
 // ─── Event Payloads ──────────────────────────────────────────
 
@@ -138,6 +139,23 @@ pub async fn spawn_agent(
         );
     }
 
+    // ── 5b. Register in input-wait tracker ───────────────────
+    {
+        let mut waits = state
+            .input_wait
+            .lock()
+            .map_err(|e| format!("Input wait lock error: {}", e))?;
+        waits.insert(
+            agent_id.to_string(),
+            InputWaitInfo {
+                last_output_at: Instant::now(),
+                last_output_text: String::new(),
+                agent_name: agent.name.clone(),
+                notification_sent: false,
+            },
+        );
+    }
+
     // ── 6. Emit initial status event ─────────────────────────
     let _ = app_handle.emit(
         "agent-status-change",
@@ -161,6 +179,19 @@ pub async fn spawn_agent(
         while let Ok(Some(line)) = lines.next_line().await {
             if let Some(event) = output_parser::parse_stream_line(&line) {
                 handle_stream_event(&handle_clone, &agent_id_owned, &event);
+
+                // Update input-wait tracker: new output arrived, reset timer
+                {
+                    let state_iw = handle_clone.state::<AppState>();
+                    let mut waits = state_iw.input_wait.lock().unwrap();
+                    if let Some(info) = waits.get_mut(&agent_id_owned) {
+                        info.last_output_at = Instant::now();
+                        info.notification_sent = false;
+                        if let StreamEvent::AssistantText { text } = &event {
+                            info.last_output_text = text.clone();
+                        }
+                    }
+                }
             }
         }
 
@@ -176,6 +207,11 @@ pub async fn spawn_agent(
             {
                 let mut procs = state_exit.processes.lock().unwrap();
                 procs.remove(&agent_id_owned);
+            }
+            // Remove from input-wait tracker
+            {
+                let mut waits = state_exit.input_wait.lock().unwrap();
+                waits.remove(&agent_id_owned);
             }
             {
                 let db = state_exit.db.lock().unwrap();
@@ -288,6 +324,15 @@ pub fn stop_agent(state: &AppState, agent_id: &str) -> Result<(), String> {
         .start_kill()
         .map_err(|e| format!("Failed to kill process for agent {}: {}", agent_id, e))?;
 
+    // Remove from input-wait tracker
+    {
+        let mut waits = state
+            .input_wait
+            .lock()
+            .map_err(|e| format!("Input wait lock error: {}", e))?;
+        waits.remove(agent_id);
+    }
+
     // Update DB
     {
         let db = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
@@ -348,6 +393,19 @@ pub async fn send_agent_input(
 
     write_result.map_err(|e| format!("Failed to write to agent stdin: {}", e))?;
     flush_result.map_err(|e| format!("Failed to flush agent stdin: {}", e))?;
+
+    // Reset input-wait tracker: user provided input, agent should resume
+    {
+        let mut waits = state
+            .input_wait
+            .lock()
+            .map_err(|e| format!("Input wait lock error: {}", e))?;
+        if let Some(info) = waits.get_mut(agent_id) {
+            info.last_output_at = Instant::now();
+            info.notification_sent = false;
+            info.last_output_text.clear();
+        }
+    }
 
     log::info!("Sent input to agent {}: {}", agent_id, input);
     Ok(())

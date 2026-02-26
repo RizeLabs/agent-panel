@@ -67,6 +67,13 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 agents::manager::health_monitor_loop(handle).await;
             });
+
+            let handle2 = app.handle().clone();
+            // Spawn background task for input-wait monitoring
+            tauri::async_runtime::spawn(async move {
+                agents::input_monitor::input_wait_monitor_loop(handle2).await;
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {

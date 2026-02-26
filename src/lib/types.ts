@@ -110,6 +110,7 @@ export type SwarmStatus = "stopped" | "running" | "paused";
 export interface Swarm {
   id: string;
   name: string;
+  goal: string | null;
   agent_ids: string; // JSON array
   coordinator_id: string | null;
   status: SwarmStatus;

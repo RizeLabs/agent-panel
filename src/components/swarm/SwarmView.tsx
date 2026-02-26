@@ -95,6 +95,16 @@ export default function SwarmView() {
               {swarm.id}
             </span>
           </div>
+          {swarm.goal && (
+            <div className="bg-panel-accent/5 border border-panel-accent/20 rounded-md px-3 py-2 mb-3">
+              <span className="text-[10px] uppercase tracking-wider text-panel-accent font-semibold">
+                Objective
+              </span>
+              <p className="text-xs text-panel-text mt-0.5 leading-relaxed">
+                {swarm.goal}
+              </p>
+            </div>
+          )}
           <div className="text-xs text-panel-text-dim mb-3">
             Created {timeAgo(swarm.created_at)}
             {swarm.coordinator_id && (
@@ -168,6 +178,7 @@ function CreateSwarmForm({
   onCreated: (id: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [goal, setGoal] = useState("");
   const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
   const { data: agents } = useAgents();
   const createSwarm = useCreateSwarm();
@@ -184,7 +195,11 @@ function CreateSwarmForm({
     e.preventDefault();
     if (!name.trim() || selectedAgents.length === 0) return;
     createSwarm.mutate(
-      { name: name.trim(), agent_ids: selectedAgents },
+      {
+        name: name.trim(),
+        agent_ids: selectedAgents,
+        goal: goal.trim() || undefined,
+      },
       {
         onSuccess: (id) => onCreated(id),
       }
@@ -221,6 +236,21 @@ function CreateSwarmForm({
           placeholder="e.g. Research Squad"
           className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent mb-4"
         />
+
+        {/* Goal Input */}
+        <label className="block text-xs text-panel-text-dim mb-1">
+          Collective Goal
+        </label>
+        <textarea
+          value={goal}
+          onChange={(e) => setGoal(e.target.value)}
+          placeholder="e.g. Research and implement a DeFi yield aggregator with optimal gas efficiency"
+          rows={3}
+          className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent mb-4 resize-none"
+        />
+        <p className="text-[10px] text-panel-text-dim/60 -mt-3 mb-4">
+          The objective function all agents in this swarm will optimise towards.
+        </p>
 
         {/* Agent Multiselect */}
         <label className="block text-xs text-panel-text-dim mb-2">

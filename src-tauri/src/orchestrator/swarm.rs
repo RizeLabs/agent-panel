@@ -20,9 +20,10 @@ pub fn create_swarm(
     state: &AppState,
     name: &str,
     agent_ids: Vec<String>,
+    goal: Option<String>,
 ) -> Result<String, String> {
     // Create the coordinator agent first
-    let coordinator_id = coordinator::create_coordinator_agent(state, name)?;
+    let coordinator_id = coordinator::create_coordinator_agent(state, name, goal.as_deref())?;
 
     let swarm_id = uuid::Uuid::new_v4().to_string();
     let agent_ids_json =
@@ -31,6 +32,7 @@ pub fn create_swarm(
     let swarm = Swarm {
         id: swarm_id.clone(),
         name: name.to_string(),
+        goal,
         agent_ids: agent_ids_json,
         coordinator_id: Some(coordinator_id),
         status: "stopped".to_string(),
@@ -69,6 +71,29 @@ pub async fn start_swarm(
     // Parse agent IDs
     let agent_ids: Vec<String> = serde_json::from_str(&swarm.agent_ids)
         .map_err(|e| format!("Failed to parse agent_ids: {}", e))?;
+
+    // If the swarm has a goal, inject it into every member agent's system prompt
+    // so they all optimise towards the same objective.
+    if let Some(ref goal) = swarm.goal {
+        if !goal.is_empty() {
+            let goal_directive = format!(
+                "\n\n=== SWARM OBJECTIVE ===\nYou are part of the \"{}\" swarm. \
+                 Your collective goal is:\n{}\n\
+                 Every action you take should move the team closer to this objective. \
+                 Share relevant findings via the message bus and coordinate with your peers.\n\
+                 === END OBJECTIVE ===",
+                swarm.name, goal
+            );
+            for agent_id in &agent_ids {
+                if let Err(e) = inject_context_into_agent(state, agent_id, &goal_directive) {
+                    log::error!(
+                        "Failed to inject swarm goal into agent {}: {}",
+                        agent_id, e
+                    );
+                }
+            }
+        }
+    }
 
     // Start each member agent
     for agent_id in &agent_ids {

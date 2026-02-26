@@ -8,8 +8,23 @@ use crate::state::AppState;
 /// Default coordinator loop interval in seconds.
 const DEFAULT_COORDINATOR_INTERVAL_SECS: u64 = 120;
 
-/// The system prompt given to every coordinator agent.
-const COORDINATOR_SYSTEM_PROMPT: &str = r#"You are a coordination agent. Review the following findings and messages from your team, synthesize key insights, identify gaps, and suggest next steps. Output your analysis as structured JSON with fields: insights (array of strings), tasks (array of {title, description, priority, assigned_to}), questions (array of strings for human review)."#;
+/// The base system prompt given to every coordinator agent.
+/// When a swarm goal is provided it is prepended as an objective function.
+const COORDINATOR_BASE_PROMPT: &str = r#"You are a coordination agent. Review the following findings and messages from your team, synthesize key insights, identify gaps, and suggest next steps. Output your analysis as structured JSON with fields: insights (array of strings), tasks (array of {title, description, priority, assigned_to}), questions (array of strings for human review)."#;
+
+/// Build the full coordinator system prompt, optionally prepending the swarm goal.
+fn coordinator_system_prompt(goal: Option<&str>) -> String {
+    match goal {
+        Some(g) if !g.is_empty() => format!(
+            "=== SWARM OBJECTIVE (your optimisation target) ===\n{}\n\
+             === END OBJECTIVE ===\n\n\
+             All of your coordination decisions — task assignments, priority ordering, \
+             gap analysis — must be evaluated against how well they advance this objective.\n\n{}",
+            g, COORDINATOR_BASE_PROMPT
+        ),
+        _ => COORDINATOR_BASE_PROMPT.to_string(),
+    }
+}
 
 /// Output structure expected from the coordinator agent.
 #[derive(Debug, serde::Deserialize)]
@@ -38,6 +53,7 @@ struct CoordinatorTask {
 pub fn create_coordinator_agent(
     state: &AppState,
     swarm_name: &str,
+    goal: Option<&str>,
 ) -> Result<String, String> {
     let agent_id = uuid::Uuid::new_v4().to_string();
     let agent_name = format!("{}-coordinator", swarm_name);
@@ -46,7 +62,7 @@ pub fn create_coordinator_agent(
         id: agent_id.clone(),
         name: agent_name,
         role: "coordinator".to_string(),
-        system_prompt: Some(COORDINATOR_SYSTEM_PROMPT.to_string()),
+        system_prompt: Some(coordinator_system_prompt(goal)),
         working_directory: None,
         model: "sonnet".to_string(),
         max_turns: 10,
@@ -91,8 +107,8 @@ pub async fn coordinator_loop(
     loop {
         tokio::time::sleep(interval).await;
 
-        // Check if the swarm is still running
-        let swarm_status = {
+        // Check if the swarm is still running and fetch its goal
+        let (swarm_status, swarm_goal) = {
             let conn = match state.db.lock() {
                 Ok(c) => c,
                 Err(e) => {
@@ -101,7 +117,7 @@ pub async fn coordinator_loop(
                 }
             };
             match queries::get_swarm(&conn, swarm_id) {
-                Ok(Some(s)) => s.status,
+                Ok(Some(s)) => (s.status, s.goal),
                 Ok(None) => {
                     log::warn!(
                         "Swarm {} no longer exists, exiting coordinator loop",
@@ -150,8 +166,12 @@ pub async fn coordinator_loop(
                 }
             };
 
-        // Build the synthesis prompt
-        let synthesis_prompt = build_synthesis_prompt(&knowledge_entries, &pending_messages);
+        // Build the synthesis prompt (goal-aware)
+        let synthesis_prompt = build_synthesis_prompt(
+            swarm_goal.as_deref(),
+            &knowledge_entries,
+            &pending_messages,
+        );
 
         // Mark messages as read
         if !pending_messages.is_empty() {
@@ -185,10 +205,8 @@ pub async fn coordinator_loop(
                 }
             };
 
-            let updated_prompt = format!(
-                "{}\n\n{}",
-                COORDINATOR_SYSTEM_PROMPT, synthesis_prompt
-            );
+            let base = coordinator_system_prompt(swarm_goal.as_deref());
+            let updated_prompt = format!("{}\n\n{}", base, synthesis_prompt);
             let mut updated_agent = agent.clone();
             updated_agent.system_prompt = Some(updated_prompt);
 
@@ -227,11 +245,28 @@ pub async fn coordinator_loop(
 }
 
 /// Assemble a synthesis prompt from knowledge entries and messages.
+/// When a goal is present, the coordinator is reminded to evaluate progress
+/// against it and prioritise tasks that advance it.
 fn build_synthesis_prompt(
+    goal: Option<&str>,
     knowledge: &[queries::Knowledge],
     messages: &[queries::Message],
 ) -> String {
-    let mut prompt = String::from("=== TEAM KNOWLEDGE BASE ===\n\n");
+    let mut prompt = String::new();
+
+    if let Some(g) = goal {
+        if !g.is_empty() {
+            prompt.push_str(&format!(
+                "=== REMINDER: SWARM OBJECTIVE ===\n{}\n\
+                 Evaluate all findings below against this objective. Prioritise tasks that \
+                 directly advance it, flag anything that drifts off-target, and rate overall \
+                 progress (0-100%).\n=== END REMINDER ===\n\n",
+                g
+            ));
+        }
+    }
+
+    prompt.push_str("=== TEAM KNOWLEDGE BASE ===\n\n");
 
     if knowledge.is_empty() {
         prompt.push_str("(No knowledge entries yet.)\n\n");

@@ -51,8 +51,11 @@ export const getAgentLogs = (agentId: string, limit?: number) =>
 
 // ─── Swarm Commands ───────────────────────────────────────────
 
-export const createSwarm = (request: { name: string; agent_ids: string[] }) =>
-  invoke<string>("create_swarm", { request });
+export const createSwarm = (request: {
+  name: string;
+  agent_ids: string[];
+  goal?: string;
+}) => invoke<string>("create_swarm", { request });
 
 export const startSwarm = (swarmId: string) =>
   invoke<void>("start_swarm", { swarmId });

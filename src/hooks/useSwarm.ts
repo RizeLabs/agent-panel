@@ -10,7 +10,7 @@ import { toast } from "sonner";
 export function useCreateSwarm() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (request: { name: string; agent_ids: string[] }) =>
+    mutationFn: (request: { name: string; agent_ids: string[]; goal?: string }) =>
       createSwarm(request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["swarm"] });

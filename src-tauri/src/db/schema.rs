@@ -109,6 +109,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS swarms (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            goal TEXT,
             agent_ids TEXT NOT NULL DEFAULT '[]',
             coordinator_id TEXT,
             status TEXT DEFAULT 'stopped',
@@ -117,6 +118,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         );
         ",
     )?;
+
+    // Migration: add goal column to swarms if missing (for existing DBs)
+    let has_goal_col: bool = conn
+        .prepare("SELECT goal FROM swarms LIMIT 0")
+        .is_ok();
+    if !has_goal_col {
+        conn.execute_batch("ALTER TABLE swarms ADD COLUMN goal TEXT;")?;
+    }
 
     // Create FTS indexes if they don't exist (using a check)
     let has_knowledge_fts: bool = conn

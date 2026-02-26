@@ -517,6 +517,7 @@ pub fn get_all_settings(conn: &Connection) -> Result<Vec<(String, String)>> {
 pub struct Swarm {
     pub id: String,
     pub name: String,
+    pub goal: Option<String>,
     pub agent_ids: String,
     pub coordinator_id: Option<String>,
     pub status: String,
@@ -525,11 +526,12 @@ pub struct Swarm {
 
 pub fn insert_swarm(conn: &Connection, swarm: &Swarm) -> Result<()> {
     conn.execute(
-        "INSERT INTO swarms (id, name, agent_ids, coordinator_id, status)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO swarms (id, name, goal, agent_ids, coordinator_id, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![
             swarm.id,
             swarm.name,
+            swarm.goal,
             swarm.agent_ids,
             swarm.coordinator_id,
             swarm.status,
@@ -540,17 +542,18 @@ pub fn insert_swarm(conn: &Connection, swarm: &Swarm) -> Result<()> {
 
 pub fn get_swarm(conn: &Connection, id: &str) -> Result<Option<Swarm>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, agent_ids, coordinator_id, status, created_at FROM swarms WHERE id = ?1",
+        "SELECT id, name, goal, agent_ids, coordinator_id, status, created_at FROM swarms WHERE id = ?1",
     )?;
     let mut rows = stmt
         .query_map(params![id], |row| {
             Ok(Swarm {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                agent_ids: row.get(2)?,
-                coordinator_id: row.get(3)?,
-                status: row.get(4)?,
-                created_at: row.get(5)?,
+                goal: row.get(2)?,
+                agent_ids: row.get(3)?,
+                coordinator_id: row.get(4)?,
+                status: row.get(5)?,
+                created_at: row.get(6)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;

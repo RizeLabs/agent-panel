@@ -8,6 +8,7 @@ use tauri::State;
 pub struct CreateSwarmRequest {
     pub name: String,
     pub agent_ids: Vec<String>,
+    pub goal: Option<String>,
 }
 
 #[tauri::command]
@@ -15,7 +16,7 @@ pub fn create_swarm(
     state: State<'_, AppState>,
     request: CreateSwarmRequest,
 ) -> Result<String, String> {
-    swarm::create_swarm(&state, &request.name, request.agent_ids)
+    swarm::create_swarm(&state, &request.name, request.agent_ids, request.goal)
 }
 
 #[tauri::command]

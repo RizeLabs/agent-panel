@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Send,
-  BookOpen,
   Eye,
   EyeOff,
 } from "lucide-react";
@@ -186,8 +185,6 @@ interface AgentConfigState {
 interface IntegrationState {
   telegram_bot_token: string;
   telegram_chat_id: string;
-  notion_api_key: string;
-  notion_database_id: string;
 }
 
 function SecretInput({
@@ -238,8 +235,6 @@ function CreateSwarmForm({
   const [integrations, setIntegrations] = useState<IntegrationState>({
     telegram_bot_token: "",
     telegram_chat_id: "",
-    notion_api_key: "",
-    notion_database_id: "",
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -262,10 +257,6 @@ function CreateSwarmForm({
           prev.telegram_bot_token || settings.values.telegram_bot_token || "",
         telegram_chat_id:
           prev.telegram_chat_id || settings.values.telegram_chat_id || "",
-        notion_api_key:
-          prev.notion_api_key || settings.values.notion_api_key || "",
-        notion_database_id:
-          prev.notion_database_id || settings.values.notion_database_id || "",
       }));
     }
   }, [step, settings]);
@@ -332,10 +323,6 @@ function CreateSwarmForm({
         settingsToSave.telegram_bot_token = integrations.telegram_bot_token.trim();
       if (integrations.telegram_chat_id.trim())
         settingsToSave.telegram_chat_id = integrations.telegram_chat_id.trim();
-      if (integrations.notion_api_key.trim())
-        settingsToSave.notion_api_key = integrations.notion_api_key.trim();
-      if (integrations.notion_database_id.trim())
-        settingsToSave.notion_database_id = integrations.notion_database_id.trim();
 
       if (Object.keys(settingsToSave).length > 0) {
         await saveSettings(settingsToSave);
@@ -579,8 +566,8 @@ function CreateSwarmForm({
           /* ─── Step 3: Integrations ─── */
           <div className="flex-1 overflow-y-auto space-y-4">
             <p className="text-[11px] text-panel-text-dim">
-              Optionally configure integrations for this swarm. These credentials
-              are saved to your app settings and shared across all swarms.
+              Optionally configure Telegram for this swarm. Credentials are saved
+              to your app settings and shared across all swarms.
             </p>
 
             {/* Telegram */}
@@ -622,46 +609,6 @@ function CreateSwarmForm({
               />
             </div>
 
-            {/* Notion */}
-            <div className="bg-panel-bg border border-panel-border rounded-md p-3">
-              <div className="flex items-center gap-2 mb-3">
-                <BookOpen size={14} className="text-panel-text" />
-                <span className="text-xs font-medium text-panel-text">
-                  Notion
-                </span>
-              </div>
-
-              <label className="block text-[11px] text-panel-text-dim mb-1">
-                API Key
-              </label>
-              <div className="mb-3">
-                <SecretInput
-                  value={integrations.notion_api_key}
-                  onChange={(v) => updateIntegration("notion_api_key", v)}
-                  placeholder="ntn_..."
-                />
-              </div>
-              <p className="text-[10px] text-panel-text-dim/60 -mt-2 mb-3">
-                Create an internal integration at{" "}
-                <span className="text-panel-accent">
-                  notion.so/my-integrations
-                </span>
-                .
-              </p>
-
-              <label className="block text-[11px] text-panel-text-dim mb-1">
-                Database ID
-              </label>
-              <input
-                type="text"
-                value={integrations.notion_database_id}
-                onChange={(e) =>
-                  updateIntegration("notion_database_id", e.target.value)
-                }
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent font-mono"
-              />
-            </div>
           </div>
         )}
 

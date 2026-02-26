@@ -609,3 +609,129 @@ pub fn update_swarm_status(conn: &Connection, id: &str, status: &str) -> Result<
     )?;
     Ok(())
 }
+
+// ─── Cron Job Queries ─────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CronJob {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub interval_secs: i64,
+    pub agent_id: String,
+    pub action_type: String, // "post_message" | "inject_context"
+    pub payload: String,
+    pub enabled: bool,
+    pub last_run_at: Option<String>,
+    pub next_run_at: String,
+    pub run_count: i64,
+    pub created_by: String,
+    pub created_at: String,
+}
+
+fn map_cron_job(row: &rusqlite::Row) -> rusqlite::Result<CronJob> {
+    Ok(CronJob {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        description: row.get(2)?,
+        interval_secs: row.get(3)?,
+        agent_id: row.get(4)?,
+        action_type: row.get(5)?,
+        payload: row.get(6)?,
+        enabled: row.get::<_, i64>(7)? != 0,
+        last_run_at: row.get(8)?,
+        next_run_at: row.get(9)?,
+        run_count: row.get(10)?,
+        created_by: row.get(11)?,
+        created_at: row.get(12)?,
+    })
+}
+
+pub fn insert_cron_job(conn: &Connection, job: &CronJob) -> Result<()> {
+    conn.execute(
+        "INSERT INTO cron_jobs (id, name, description, interval_secs, agent_id, action_type,
+                               payload, enabled, last_run_at, next_run_at, run_count,
+                               created_by, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            job.id,
+            job.name,
+            job.description,
+            job.interval_secs,
+            job.agent_id,
+            job.action_type,
+            job.payload,
+            job.enabled as i64,
+            job.last_run_at,
+            job.next_run_at,
+            job.run_count,
+            job.created_by,
+            job.created_at,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn get_all_cron_jobs(conn: &Connection) -> Result<Vec<CronJob>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, interval_secs, agent_id, action_type, payload, enabled,
+                last_run_at, next_run_at, run_count, created_by, created_at
+         FROM cron_jobs ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map([], map_cron_job)?;
+    rows.collect::<Result<Vec<_>>>()
+}
+
+pub fn get_due_cron_jobs(conn: &Connection) -> Result<Vec<CronJob>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, interval_secs, agent_id, action_type, payload, enabled,
+                last_run_at, next_run_at, run_count, created_by, created_at
+         FROM cron_jobs WHERE enabled = 1 AND next_run_at <= datetime('now')",
+    )?;
+    let rows = stmt.query_map([], map_cron_job)?;
+    rows.collect::<Result<Vec<_>>>()
+}
+
+pub fn get_cron_job_by_id(conn: &Connection, id: &str) -> Result<Option<CronJob>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, interval_secs, agent_id, action_type, payload, enabled,
+                last_run_at, next_run_at, run_count, created_by, created_at
+         FROM cron_jobs WHERE id = ?1",
+    )?;
+    let mut rows = stmt
+        .query_map(params![id], map_cron_job)?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(rows.pop())
+}
+
+pub fn update_cron_job(conn: &Connection, job: &CronJob) -> Result<()> {
+    conn.execute(
+        "UPDATE cron_jobs SET name=?1, description=?2, interval_secs=?3, agent_id=?4,
+         action_type=?5, payload=?6, enabled=?7, next_run_at=?8 WHERE id=?9",
+        params![
+            job.name,
+            job.description,
+            job.interval_secs,
+            job.agent_id,
+            job.action_type,
+            job.payload,
+            job.enabled as i64,
+            job.next_run_at,
+            job.id,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_cron_job(conn: &Connection, id: &str) -> Result<()> {
+    conn.execute("DELETE FROM cron_jobs WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+pub fn record_cron_run(conn: &Connection, id: &str, now_iso: &str, next_iso: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE cron_jobs SET last_run_at=?1, next_run_at=?2, run_count=run_count+1 WHERE id=?3",
+        params![now_iso, next_iso, id],
+    )?;
+    Ok(())
+}

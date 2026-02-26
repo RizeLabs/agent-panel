@@ -63,6 +63,12 @@ pub fn run() {
             commands::notion_commands::create_task,
             commands::notion_commands::delete_task,
             commands::notion_commands::get_swarms,
+            // Cron commands
+            commands::cron_commands::create_cron_job,
+            commands::cron_commands::list_cron_jobs,
+            commands::cron_commands::update_cron_job,
+            commands::cron_commands::delete_cron_job,
+            commands::cron_commands::trigger_cron_job,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -75,6 +81,12 @@ pub fn run() {
             // Spawn background task for input-wait monitoring
             tauri::async_runtime::spawn(async move {
                 agents::input_monitor::input_wait_monitor_loop(handle2).await;
+            });
+
+            let handle3 = app.handle().clone();
+            // Spawn global cron runner (30 s poll)
+            tauri::async_runtime::spawn(async move {
+                orchestrator::cron_runner::cron_runner_loop(handle3).await;
             });
 
             Ok(())

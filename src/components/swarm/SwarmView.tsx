@@ -12,6 +12,8 @@ import {
   Send,
   Eye,
   EyeOff,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import type { Swarm, Agent, SkillDefinition } from "../../lib/types";
 import { cn, statusDotColor, parseJsonSafe, timeAgo } from "../../lib/utils";
@@ -19,138 +21,92 @@ import { useAgents } from "../../hooks/useAgents";
 import { listSkills, saveSettings } from "../../lib/tauri";
 import { useSettings } from "../../hooks/useSettings";
 import {
-  useSwarmStatus,
+  useSwarms,
   useCreateSwarm,
   useStartSwarm,
   useStopSwarm,
 } from "../../hooks/useSwarm";
 
-export default function SwarmView() {
-  const [swarmId, setSwarmId] = useState<string | null>(null);
+export default function SwarmView({
+  onSwarmChange,
+}: {
+  onSwarmChange?: (swarm: Swarm | undefined) => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const { data: swarm } = useSwarmStatus(swarmId ?? "");
+  const { data: swarms = [], isLoading } = useSwarms();
   const startSwarm = useStartSwarm();
   const stopSwarm = useStopSwarm();
 
-  const agents = swarm ? parseJsonSafe<string[]>(swarm.agent_ids, []) : [];
+  // Keep the selected swarm in sync for the graph/other tabs
+  const selectedSwarm = swarms.find((s) => s.id === selectedId) ?? null;
+  useEffect(() => {
+    onSwarmChange?.(selectedSwarm ?? undefined);
+  }, [selectedSwarm, onSwarmChange]);
+
+  // Auto-select first running swarm, or just first swarm
+  useEffect(() => {
+    if (selectedId || swarms.length === 0) return;
+    const running = swarms.find((s) => s.status === "running");
+    setSelectedId((running ?? swarms[0]).id);
+  }, [swarms, selectedId]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Network size={20} className="text-panel-accent" />
-          <h2 className="text-lg font-semibold text-panel-text">Swarm</h2>
-          {swarm && (
-            <span
-              className={cn(
-                "text-xs px-2 py-0.5 rounded-full font-medium capitalize",
-                swarm.status === "running"
-                  ? "bg-panel-success/15 text-panel-success"
-                  : swarm.status === "paused"
-                    ? "bg-panel-warning/15 text-panel-warning"
-                    : "bg-panel-text-dim/15 text-panel-text-dim"
-              )}
-            >
-              {swarm.status}
+        <div className="flex items-center gap-2">
+          <Network size={18} className="text-panel-accent" />
+          <h2 className="text-base font-semibold text-panel-text">Swarms</h2>
+          {swarms.length > 0 && (
+            <span className="text-[11px] text-panel-text-dim bg-panel-border/50 rounded-full px-2 py-0.5">
+              {swarms.filter((s) => s.status === "running").length} running /{" "}
+              {swarms.length} total
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {swarm && swarm.status !== "running" && (
-            <button
-              type="button"
-              onClick={() => startSwarm.mutate(swarm.id)}
-              disabled={startSwarm.isPending}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-panel-success/15 text-panel-success hover:bg-panel-success/25 transition-colors"
-            >
-              <Play size={14} />
-              Start Swarm
-            </button>
-          )}
-          {swarm && swarm.status === "running" && (
-            <button
-              type="button"
-              onClick={() => stopSwarm.mutate(swarm.id)}
-              disabled={stopSwarm.isPending}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-panel-error/15 text-panel-error hover:bg-panel-error/25 transition-colors"
-            >
-              <Square size={14} />
-              Stop Swarm
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-panel-accent/15 text-panel-accent hover:bg-panel-accent/25 transition-colors"
-          >
-            <Plus size={14} />
-            Create Swarm
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-panel-accent/15 text-panel-accent hover:bg-panel-accent/25 transition-colors"
+        >
+          <Plus size={13} />
+          New Swarm
+        </button>
       </div>
 
-      {/* Swarm Info */}
-      {swarm ? (
-        <div className="bg-panel-surface border border-panel-border rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="text-sm font-medium text-panel-text">
-              {swarm.name}
-            </h3>
-            <span className="text-[11px] text-panel-text-dim font-mono">
-              {swarm.id}
-            </span>
-          </div>
-          {swarm.goal && (
-            <div className="bg-panel-accent/5 border border-panel-accent/20 rounded-md px-3 py-2 mb-3">
-              <span className="text-[10px] uppercase tracking-wider text-panel-accent font-semibold">
-                Objective
-              </span>
-              <p className="text-xs text-panel-text mt-0.5 leading-relaxed">
-                {swarm.goal}
-              </p>
-            </div>
-          )}
-          <div className="text-xs text-panel-text-dim mb-3">
-            Created {timeAgo(swarm.created_at)}
-            {swarm.coordinator_id && (
-              <span className="ml-3">
-                Coordinator:{" "}
-                <span className="text-panel-text">{swarm.coordinator_id}</span>
-              </span>
-            )}
-          </div>
-
-          {/* Agent List */}
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5 text-xs text-panel-text-dim mb-2">
-              <Users size={13} />
-              <span>Agents ({agents.length})</span>
-            </div>
-            {agents.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2">
-                {agents.map((agentId) => (
-                  <AgentBadge key={agentId} agentId={agentId} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-panel-text-dim italic">
-                No agents in swarm
-              </p>
-            )}
-          </div>
+      {/* Swarm List */}
+      {isLoading ? (
+        <div className="text-xs text-panel-text-dim py-4 text-center">
+          Loading swarms…
         </div>
-      ) : (
-        <div className="bg-panel-surface border border-panel-border rounded-lg p-8 text-center">
-          <Network
-            size={32}
-            className="text-panel-text-dim mx-auto mb-3 opacity-40"
-          />
-          <p className="text-sm text-panel-text-dim">No swarm selected</p>
-          <p className="text-xs text-panel-text-dim/70 mt-1">
+      ) : swarms.length === 0 ? (
+        <div className="bg-panel-surface border border-panel-border rounded-lg p-6 text-center">
+          <Network size={28} className="text-panel-text-dim mx-auto mb-2 opacity-40" />
+          <p className="text-sm text-panel-text-dim">No swarms yet</p>
+          <p className="text-xs text-panel-text-dim/60 mt-0.5">
             Create a swarm to coordinate multiple agents
           </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {swarms.map((swarm) => (
+            <SwarmCard
+              key={swarm.id}
+              swarm={swarm}
+              selected={swarm.id === selectedId}
+              onSelect={() =>
+                setSelectedId((prev) =>
+                  prev === swarm.id ? null : swarm.id
+                )
+              }
+              onStart={() => startSwarm.mutate(swarm.id)}
+              onStop={() => stopSwarm.mutate(swarm.id)}
+              startPending={startSwarm.isPending}
+              stopPending={stopSwarm.isPending}
+            />
+          ))}
         </div>
       )}
 
@@ -159,7 +115,7 @@ export default function SwarmView() {
         <CreateSwarmForm
           onClose={() => setShowCreate(false)}
           onCreated={(id) => {
-            setSwarmId(id);
+            setSelectedId(id);
             setShowCreate(false);
           }}
         />
@@ -168,11 +124,188 @@ export default function SwarmView() {
   );
 }
 
-function AgentBadge({ agentId }: { agentId: string }) {
+function SwarmCard({
+  swarm,
+  selected,
+  onSelect,
+  onStart,
+  onStop,
+  startPending,
+  stopPending,
+}: {
+  swarm: Swarm;
+  selected: boolean;
+  onSelect: () => void;
+  onStart: () => void;
+  onStop: () => void;
+  startPending: boolean;
+  stopPending: boolean;
+}) {
+  const agentIds = parseJsonSafe<string[]>(swarm.agent_ids, []);
+  const { data: agents = [] } = useAgents();
+
+  const isRunning = swarm.status === "running";
+  const isStopped = swarm.status === "stopped";
+
   return (
-    <div className="flex items-center gap-2 bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-xs">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-panel-text-dim" />
-      <span className="text-panel-text font-mono truncate">{agentId}</span>
+    <div
+      className={cn(
+        "bg-panel-surface border rounded-lg transition-colors",
+        selected ? "border-panel-accent/50" : "border-panel-border"
+      )}
+    >
+      {/* Card header — always visible */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+        onClick={onSelect}
+      >
+        {/* Status dot */}
+        <span
+          className={cn(
+            "w-2 h-2 rounded-full shrink-0",
+            isRunning
+              ? "bg-panel-success animate-pulse"
+              : isStopped
+                ? "bg-panel-text-dim/40"
+                : "bg-panel-warning"
+          )}
+        />
+
+        {/* Name + goal */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-panel-text truncate">
+              {swarm.name}
+            </span>
+            <span
+              className={cn(
+                "text-[10px] px-1.5 py-0.5 rounded-full font-medium capitalize shrink-0",
+                isRunning
+                  ? "bg-panel-success/15 text-panel-success"
+                  : isStopped
+                    ? "bg-panel-text-dim/15 text-panel-text-dim"
+                    : "bg-panel-warning/15 text-panel-warning"
+              )}
+            >
+              {swarm.status}
+            </span>
+          </div>
+          {swarm.goal && (
+            <p className="text-[11px] text-panel-text-dim truncate mt-0.5">
+              {swarm.goal}
+            </p>
+          )}
+        </div>
+
+        {/* Meta */}
+        <div className="flex items-center gap-3 shrink-0 text-xs text-panel-text-dim">
+          <span className="flex items-center gap-1">
+            <Users size={11} />
+            {agentIds.length}
+          </span>
+          <span>{timeAgo(swarm.created_at)}</span>
+        </div>
+
+        {/* Start / Stop */}
+        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {isRunning ? (
+            <button
+              type="button"
+              onClick={onStop}
+              disabled={stopPending}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-panel-error/15 text-panel-error hover:bg-panel-error/25 transition-colors disabled:opacity-50"
+            >
+              <Square size={11} />
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={startPending}
+              className="flex items-center gap-1 text-xs px-2.5 py-1 rounded bg-panel-success/15 text-panel-success hover:bg-panel-success/25 transition-colors disabled:opacity-50"
+            >
+              <Play size={11} />
+              Start
+            </button>
+          )}
+        </div>
+
+        {/* Expand chevron */}
+        <span className="text-panel-text-dim shrink-0">
+          {selected ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </div>
+
+      {/* Expanded detail */}
+      {selected && (
+        <div className="border-t border-panel-border px-4 py-3 flex flex-col gap-3">
+          {swarm.goal && (
+            <div className="bg-panel-accent/5 border border-panel-accent/20 rounded-md px-3 py-2">
+              <span className="text-[10px] uppercase tracking-wider text-panel-accent font-semibold">
+                Objective
+              </span>
+              <p className="text-xs text-panel-text mt-0.5 leading-relaxed">
+                {swarm.goal}
+              </p>
+            </div>
+          )}
+
+          {/* Agent roster */}
+          <div>
+            <div className="flex items-center gap-1.5 text-xs text-panel-text-dim mb-2">
+              <Users size={12} />
+              <span>Agents ({agentIds.length})</span>
+              {swarm.coordinator_id && (
+                <span className="ml-auto text-[10px]">
+                  Coordinator:{" "}
+                  <span className="text-panel-text font-mono">
+                    {agents.find((a) => a.id === swarm.coordinator_id)?.name ??
+                      swarm.coordinator_id.slice(0, 8)}
+                  </span>
+                </span>
+              )}
+            </div>
+            {agentIds.length > 0 ? (
+              <div className="grid grid-cols-2 gap-1.5">
+                {agentIds.map((agentId) => (
+                  <AgentBadge key={agentId} agentId={agentId} agents={agents} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-panel-text-dim italic">
+                No member agents
+              </p>
+            )}
+          </div>
+
+          <div className="text-[11px] text-panel-text-dim font-mono">
+            id: {swarm.id}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentBadge({ agentId, agents }: { agentId: string; agents: Agent[] }) {
+  const agent = agents.find((a) => a.id === agentId);
+  return (
+    <div className="flex items-center gap-2 bg-panel-bg border border-panel-border rounded-md px-2.5 py-1.5 text-xs">
+      <span
+        className={cn(
+          "w-1.5 h-1.5 rounded-full shrink-0",
+          statusDotColor(agent?.status ?? "idle")
+        )}
+      />
+      <span className="text-panel-text truncate">
+        {agent?.name ?? agentId.slice(0, 8)}
+      </span>
+      {agent && (
+        <span className="ml-auto text-panel-text-dim capitalize text-[10px] shrink-0">
+          {agent.role}
+        </span>
+      )}
     </div>
   );
 }

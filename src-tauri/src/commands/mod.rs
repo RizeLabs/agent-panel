@@ -1,4 +1,5 @@
 pub mod agent_commands;
+pub mod cron_commands;
 pub mod message_commands;
 pub mod notion_commands;
 pub mod settings_commands;

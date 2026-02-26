@@ -19,6 +19,7 @@ export interface Agent {
   max_turns: number;
   skills: string; // JSON array
   env_vars: string; // JSON object
+  prompt_context: string | null;
   status: AgentStatus;
   pid: number | null;
   session_id: string | null;
@@ -49,7 +50,9 @@ export type MessageType =
   | "task_update"
   | "finding"
   | "request"
-  | "response";
+  | "response"
+  | "schedule_request" // agent → scheduler: register a recurring job
+  | "cron_trigger"; // scheduler → agent: job fired
 
 export interface Message {
   id: number;
@@ -150,6 +153,24 @@ export interface AgentLog {
   agent_id: string;
   log_type: LogType;
   content: string;
+  created_at: string;
+}
+
+// ─── Cron Job Types ───────────────────────────────────────────
+
+export interface CronJob {
+  id: string;
+  name: string;
+  description: string | null;
+  interval_secs: number;
+  agent_id: string;
+  action_type: "post_message" | "inject_context";
+  payload: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string;
+  run_count: number;
+  created_by: string;
   created_at: string;
 }
 

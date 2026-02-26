@@ -7,6 +7,7 @@ import type {
   AgentStatusEvent,
   AgentWaitingEvent,
   CreateAgentRequest,
+  CronJob,
   Knowledge,
   Message,
   Settings,
@@ -159,6 +160,28 @@ export const deleteTask = (taskId: string) =>
   invoke<void>("delete_task", { taskId });
 
 export const syncNotion = () => invoke<Task[]>("sync_notion");
+
+// ─── Cron Job Commands ────────────────────────────────────────
+
+export const createCronJob = (request: {
+  name: string;
+  description?: string;
+  interval_secs: number;
+  agent_id: string;
+  action_type: string;
+  payload: string;
+}) => invoke<CronJob>("create_cron_job", { request });
+
+export const listCronJobs = () => invoke<CronJob[]>("list_cron_jobs");
+
+export const updateCronJob = (job: CronJob) =>
+  invoke<CronJob>("update_cron_job", { job });
+
+export const deleteCronJob = (jobId: string) =>
+  invoke<void>("delete_cron_job", { jobId });
+
+export const triggerCronJob = (jobId: string) =>
+  invoke<void>("trigger_cron_job", { jobId });
 
 // ─── Settings Commands ────────────────────────────────────────
 

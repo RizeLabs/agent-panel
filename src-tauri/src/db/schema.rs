@@ -116,6 +116,23 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (coordinator_id) REFERENCES agents(id)
         );
+
+        CREATE TABLE IF NOT EXISTS cron_jobs (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            description   TEXT,
+            interval_secs INTEGER NOT NULL,
+            agent_id      TEXT NOT NULL,
+            action_type   TEXT NOT NULL,
+            payload       TEXT NOT NULL,
+            enabled       INTEGER NOT NULL DEFAULT 1,
+            last_run_at   TEXT,
+            next_run_at   TEXT NOT NULL,
+            run_count     INTEGER NOT NULL DEFAULT 0,
+            created_by    TEXT NOT NULL DEFAULT 'user',
+            created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (agent_id) REFERENCES agents(id)
+        );
         ",
     )?;
 
@@ -143,6 +160,29 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         .is_ok();
     if !has_swarm_id_col {
         conn.execute_batch("ALTER TABLE tasks ADD COLUMN swarm_id TEXT;")?;
+    }
+
+    // Migration: add cron_jobs table if missing (for existing DBs)
+    let has_cron_jobs: bool = conn.prepare("SELECT id FROM cron_jobs LIMIT 0").is_ok();
+    if !has_cron_jobs {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS cron_jobs (
+                id            TEXT PRIMARY KEY,
+                name          TEXT NOT NULL,
+                description   TEXT,
+                interval_secs INTEGER NOT NULL,
+                agent_id      TEXT NOT NULL,
+                action_type   TEXT NOT NULL,
+                payload       TEXT NOT NULL,
+                enabled       INTEGER NOT NULL DEFAULT 1,
+                last_run_at   TEXT,
+                next_run_at   TEXT NOT NULL,
+                run_count     INTEGER NOT NULL DEFAULT 0,
+                created_by    TEXT NOT NULL DEFAULT 'user',
+                created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (agent_id) REFERENCES agents(id)
+            );",
+        )?;
     }
 
     // Create FTS indexes if they don't exist (using a check)

@@ -15,7 +15,17 @@ static SHUTDOWN: std::sync::LazyLock<Arc<Notify>> =
 
 // ─── Simple HTTP helpers ──────────────────────────────────────
 
+/// Escape a string for use in Telegram HTML messages.
+/// Replaces &, <, > with their HTML entities so dynamic content
+/// can never break the message rendering.
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 /// Send a single Telegram message via the Bot API using reqwest.
+/// Uses HTML parse mode — all dynamic content must be HTML-escaped first.
 pub async fn send_telegram_message(
     bot_token: &str,
     chat_id: &str,
@@ -29,7 +39,7 @@ pub async fn send_telegram_message(
         .json(&json!({
             "chat_id": chat_id,
             "text": message,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
         }))
         .send()
         .await
@@ -54,15 +64,18 @@ pub async fn notify_agent_error(
     error: &str,
 ) -> Result<(), String> {
     let message = format!(
-        "*Agent Error*\n\n\
-         *Agent:* `{}`\n\
-         *Error:* ```\n{}\n```",
-        agent_name, error
+        "🔴 <b>Agent Error</b>\n\n\
+         <b>Agent:</b> <code>{}</code>\n\
+         <b>Error:</b>\n<pre>{}</pre>",
+        escape_html(agent_name),
+        escape_html(error)
     );
     send_telegram_message(bot_token, chat_id, &message).await
 }
 
 /// Format and send a "human input needed" notification.
+/// The `question` field is HTML-escaped so raw agent output (code, JSON,
+/// markdown, etc.) never causes Telegram to silently drop the content.
 pub async fn notify_human_needed(
     bot_token: &str,
     chat_id: &str,
@@ -70,11 +83,12 @@ pub async fn notify_human_needed(
     question: &str,
 ) -> Result<(), String> {
     let message = format!(
-        "*Agent Needs Help*\n\n\
-         *Agent:* `{}`\n\
-         *Question:* {}\n\n\
-         _Reply to this message to respond._",
-        agent_name, question
+        "🤖 <b>Agent Needs Input</b>\n\n\
+         <b>Agent:</b> <code>{}</code>\n\
+         <b>Last output / question:</b>\n{}\n\n\
+         <i>Reply to this message to respond to the agent.</i>",
+        escape_html(agent_name),
+        escape_html(question)
     );
     send_telegram_message(bot_token, chat_id, &message).await
 }

@@ -4,6 +4,7 @@ import {
   startSwarm,
   stopSwarm,
   getSwarmStatus,
+  getSwarms,
 } from "../lib/tauri";
 import { toast } from "sonner";
 
@@ -57,5 +58,13 @@ export function useSwarmStatus(swarmId: string) {
     queryFn: () => getSwarmStatus(swarmId),
     enabled: !!swarmId,
     refetchInterval: 3000,
+  });
+}
+
+export function useSwarms() {
+  return useQuery({
+    queryKey: ["swarms"],
+    queryFn: getSwarms,
+    refetchInterval: 5000,
   });
 }

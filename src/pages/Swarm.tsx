@@ -1,20 +1,24 @@
 import { useState } from "react";
-import { MessageSquare, BookOpen, Network } from "lucide-react";
+import { MessageSquare, BookOpen, Network, Timer } from "lucide-react";
 import { cn } from "../lib/utils";
+import type { Swarm } from "../lib/types";
 import SwarmView from "../components/swarm/SwarmView";
 import MessageFeed from "../components/swarm/MessageFeed";
 import KnowledgeBase from "../components/swarm/KnowledgeBase";
+import SwarmGraph from "../components/swarm/SwarmGraph";
+import CronJobs from "../components/swarm/CronJobs";
 
-type BottomTab = "messages" | "knowledge";
+type BottomTab = "messages" | "knowledge" | "graph" | "cron";
 
 export default function Swarm() {
   const [activeTab, setActiveTab] = useState<BottomTab>("messages");
+  const [currentSwarm, setCurrentSwarm] = useState<Swarm | undefined>(undefined);
 
   return (
     <div className="flex flex-col h-full gap-4">
       {/* Top: Swarm View */}
       <div className="shrink-0">
-        <SwarmView />
+        <SwarmView onSwarmChange={setCurrentSwarm} />
       </div>
 
       {/* Bottom: Tabbed section */}
@@ -33,12 +37,33 @@ export default function Swarm() {
             icon={BookOpen}
             label="Knowledge Base"
           />
+          <TabButton
+            active={activeTab === "graph"}
+            onClick={() => setActiveTab("graph")}
+            icon={Network}
+            label="Graph"
+          />
+          <TabButton
+            active={activeTab === "cron"}
+            onClick={() => setActiveTab("cron")}
+            icon={Timer}
+            label="Cron"
+          />
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {activeTab === "messages" && <MessageFeed />}
           {activeTab === "knowledge" && <KnowledgeBase />}
+          {activeTab === "graph" && currentSwarm && (
+            <SwarmGraph swarm={currentSwarm} />
+          )}
+          {activeTab === "graph" && !currentSwarm && (
+            <div className="flex items-center justify-center h-48 text-panel-text-dim text-sm">
+              Create and select a swarm to view the graph
+            </div>
+          )}
+          {activeTab === "cron" && <CronJobs />}
         </div>
       </div>
     </div>

@@ -3,7 +3,6 @@ use tauri::{AppHandle, Manager};
 use crate::agents::manager;
 use crate::db::queries::{self, Agent, Task};
 use crate::integrations::telegram;
-use crate::orchestrator::message_bus;
 use crate::state::{AgentAssignment, AppState};
 
 /// How often the coordinator loop ticks (seconds).
@@ -195,14 +194,16 @@ pub async fn coordinator_loop(app_handle: AppHandle, coordinator_id: &str, swarm
                     let tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
                     let agents = queries::get_all_agents(&conn).unwrap_or_default();
                     let knowledge = queries::get_knowledge(&conn, None, 20).unwrap_or_default();
-                    let messages =
-                        message_bus::get_pending_messages(&state.db, coordinator_id)
-                            .unwrap_or_default();
+
+                    // Use conn directly — do NOT call message_bus here, it would
+                    // try to re-lock state.db causing a deadlock.
+                    let messages = queries::get_unread_messages_for_agent(&conn, coordinator_id)
+                        .unwrap_or_default();
 
                     // Mark messages read while conn is still in scope
                     if !messages.is_empty() {
                         let ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-                        let _ = message_bus::mark_read(&state.db, &ids, coordinator_id);
+                        let _ = queries::mark_messages_read(&conn, &ids, coordinator_id);
                     }
 
                     Ok(build_synthesis_prompt(

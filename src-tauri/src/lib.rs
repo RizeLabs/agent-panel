@@ -62,6 +62,7 @@ pub fn run() {
             commands::notion_commands::update_task,
             commands::notion_commands::create_task,
             commands::notion_commands::delete_task,
+            commands::notion_commands::get_swarms,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

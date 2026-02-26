@@ -351,6 +351,7 @@ pub struct Task {
     pub description: Option<String>,
     pub status: String,
     pub assigned_agent: Option<String>,
+    pub swarm_id: Option<String>,
     pub priority: String,
     pub parent_task_id: Option<String>,
     pub blocked_by: String,
@@ -360,8 +361,8 @@ pub struct Task {
 
 pub fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
     conn.execute(
-        "INSERT INTO tasks (id, notion_page_id, title, description, status, assigned_agent, priority, parent_task_id, blocked_by)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO tasks (id, notion_page_id, title, description, status, assigned_agent, swarm_id, priority, parent_task_id, blocked_by)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             task.id,
             task.notion_page_id,
@@ -369,6 +370,7 @@ pub fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
             task.description,
             task.status,
             task.assigned_agent,
+            task.swarm_id,
             task.priority,
             task.parent_task_id,
             task.blocked_by,
@@ -389,19 +391,19 @@ pub fn get_tasks(
 ) -> Result<Vec<Task>> {
     let query = match (status, assigned_agent) {
         (Some(_), Some(_)) => {
-            "SELECT id, notion_page_id, title, description, status, assigned_agent, priority, parent_task_id, blocked_by, created_at, updated_at
+            "SELECT id, notion_page_id, title, description, status, assigned_agent, swarm_id, priority, parent_task_id, blocked_by, created_at, updated_at
              FROM tasks WHERE status = ?1 AND assigned_agent = ?2 ORDER BY created_at DESC"
         }
         (Some(_), None) => {
-            "SELECT id, notion_page_id, title, description, status, assigned_agent, priority, parent_task_id, blocked_by, created_at, updated_at
+            "SELECT id, notion_page_id, title, description, status, assigned_agent, swarm_id, priority, parent_task_id, blocked_by, created_at, updated_at
              FROM tasks WHERE status = ?1 ORDER BY created_at DESC"
         }
         (None, Some(_)) => {
-            "SELECT id, notion_page_id, title, description, status, assigned_agent, priority, parent_task_id, blocked_by, created_at, updated_at
+            "SELECT id, notion_page_id, title, description, status, assigned_agent, swarm_id, priority, parent_task_id, blocked_by, created_at, updated_at
              FROM tasks WHERE assigned_agent = ?2 ORDER BY created_at DESC"
         }
         (None, None) => {
-            "SELECT id, notion_page_id, title, description, status, assigned_agent, priority, parent_task_id, blocked_by, created_at, updated_at
+            "SELECT id, notion_page_id, title, description, status, assigned_agent, swarm_id, priority, parent_task_id, blocked_by, created_at, updated_at
              FROM tasks ORDER BY created_at DESC"
         }
     };
@@ -424,23 +426,25 @@ fn map_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         description: row.get(3)?,
         status: row.get(4)?,
         assigned_agent: row.get(5)?,
-        priority: row.get(6)?,
-        parent_task_id: row.get(7)?,
-        blocked_by: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        swarm_id: row.get(6)?,
+        priority: row.get(7)?,
+        parent_task_id: row.get(8)?,
+        blocked_by: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
     })
 }
 
 pub fn update_task(conn: &Connection, task: &Task) -> Result<()> {
     conn.execute(
-        "UPDATE tasks SET title=?1, description=?2, status=?3, assigned_agent=?4, priority=?5,
-         blocked_by=?6, updated_at=CURRENT_TIMESTAMP WHERE id=?7",
+        "UPDATE tasks SET title=?1, description=?2, status=?3, assigned_agent=?4, swarm_id=?5,
+         priority=?6, blocked_by=?7, updated_at=CURRENT_TIMESTAMP WHERE id=?8",
         params![
             task.title,
             task.description,
             task.status,
             task.assigned_agent,
+            task.swarm_id,
             task.priority,
             task.blocked_by,
             task.id,
@@ -558,6 +562,24 @@ pub fn get_swarm(conn: &Connection, id: &str) -> Result<Option<Swarm>> {
         })?
         .collect::<Result<Vec<_>>>()?;
     Ok(rows.pop())
+}
+
+pub fn get_all_swarms(conn: &Connection) -> Result<Vec<Swarm>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, goal, agent_ids, coordinator_id, status, created_at FROM swarms ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Swarm {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            goal: row.get(2)?,
+            agent_ids: row.get(3)?,
+            coordinator_id: row.get(4)?,
+            status: row.get(5)?,
+            created_at: row.get(6)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>>>()
 }
 
 pub fn update_swarm_status(conn: &Connection, id: &str, status: &str) -> Result<()> {

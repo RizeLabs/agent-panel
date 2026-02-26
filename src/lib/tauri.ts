@@ -142,6 +142,7 @@ export const createTask = (request: {
   status?: string;
   priority?: string;
   assigned_agent?: string;
+  swarm_id?: string;
 }) =>
   invoke<Task>("create_task", {
     title: request.title,
@@ -149,7 +150,10 @@ export const createTask = (request: {
     status: request.status,
     priority: request.priority,
     assignedAgent: request.assigned_agent,
+    swarmId: request.swarm_id,
   });
+
+export const getSwarms = () => invoke<Swarm[]>("get_swarms");
 
 export const deleteTask = (taskId: string) =>
   invoke<void>("delete_task", { taskId });

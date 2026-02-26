@@ -94,6 +94,7 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   assigned_agent: string | null;
+  swarm_id: string | null;
   priority: TaskPriority;
   parent_task_id: string | null;
   blocked_by: string;

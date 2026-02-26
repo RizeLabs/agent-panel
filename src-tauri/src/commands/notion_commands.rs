@@ -45,6 +45,7 @@ pub fn create_task(
     status: Option<String>,
     priority: Option<String>,
     assigned_agent: Option<String>,
+    swarm_id: Option<String>,
 ) -> Result<queries::Task, String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     let task = queries::Task {
@@ -54,6 +55,7 @@ pub fn create_task(
         description,
         status: status.unwrap_or_else(|| "todo".to_string()),
         assigned_agent,
+        swarm_id,
         priority: priority.unwrap_or_else(|| "medium".to_string()),
         parent_task_id: None,
         blocked_by: String::new(),
@@ -67,6 +69,12 @@ pub fn create_task(
         .into_iter()
         .find(|t| t.id == task.id)
         .ok_or_else(|| "Task created but not found".to_string())
+}
+
+#[tauri::command]
+pub fn get_swarms(state: State<'_, AppState>) -> Result<Vec<queries::Swarm>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    queries::get_all_swarms(&db).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

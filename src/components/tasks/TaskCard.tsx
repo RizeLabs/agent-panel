@@ -7,6 +7,7 @@ import {
   ArrowDown,
   Minus,
   Bot,
+  Layers,
   Trash2,
 } from "lucide-react";
 import type { Task, TaskPriority } from "../../lib/types";
@@ -14,6 +15,8 @@ import { cn, priorityColor, timeAgo } from "../../lib/utils";
 
 interface TaskCardProps {
   task: Task;
+  swarmName?: string;
+  agentName?: string;
   onDelete?: () => void;
 }
 
@@ -31,7 +34,7 @@ const priorityBadgeColors: Record<TaskPriority, string> = {
   low: "bg-panel-text-dim/15 text-panel-text-dim",
 };
 
-export default function TaskCard({ task, onDelete }: TaskCardProps) {
+export default function TaskCard({ task, swarmName, agentName, onDelete }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const PriorityIcon = priorityIcons[task.priority] ?? Minus;
@@ -85,12 +88,18 @@ export default function TaskCard({ task, onDelete }: TaskCardProps) {
         </span>
       </div>
 
-      {/* Footer: assigned agent + timestamp */}
-      <div className="flex items-center gap-2 text-[10px] text-panel-text-dim">
-        {task.assigned_agent && (
-          <span className="flex items-center gap-1">
-            <Bot size={10} />
-            <span className="text-panel-text">{task.assigned_agent}</span>
+      {/* Footer: swarm, agent, timestamp */}
+      <div className="flex items-center gap-2 text-[10px] text-panel-text-dim flex-wrap">
+        {swarmName && (
+          <span className="flex items-center gap-1 bg-panel-accent/10 text-panel-accent px-1.5 py-0.5 rounded">
+            <Layers size={9} />
+            {swarmName}
+          </span>
+        )}
+        {agentName && (
+          <span className="flex items-center gap-1 bg-panel-border/40 text-panel-text px-1.5 py-0.5 rounded">
+            <Bot size={9} />
+            {agentName}
           </span>
         )}
         <span className="ml-auto">{timeAgo(task.updated_at)}</span>

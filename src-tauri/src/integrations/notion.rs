@@ -260,6 +260,7 @@ pub async fn sync_tasks(
                 description: page.description.clone(),
                 status: page.status.clone().unwrap_or_else(|| "todo".to_string()),
                 assigned_agent: None,
+                swarm_id: None,
                 priority: page
                     .priority
                     .clone()

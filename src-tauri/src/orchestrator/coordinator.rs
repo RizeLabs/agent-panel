@@ -343,6 +343,7 @@ fn process_coordinator_output(
                     description: task.description.clone(),
                     status: "todo".to_string(),
                     assigned_agent: task.assigned_to.clone(),
+                    swarm_id: None,
                     priority: task
                         .priority
                         .clone()

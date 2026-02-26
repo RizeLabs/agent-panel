@@ -126,6 +126,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE swarms ADD COLUMN goal TEXT;")?;
     }
 
+    // Migration: add swarm_id column to tasks if missing (for existing DBs)
+    let has_swarm_id_col: bool = conn
+        .prepare("SELECT swarm_id FROM tasks LIMIT 0")
+        .is_ok();
+    if !has_swarm_id_col {
+        conn.execute_batch("ALTER TABLE tasks ADD COLUMN swarm_id TEXT;")?;
+    }
+
     // Create FTS indexes if they don't exist (using a check)
     let has_knowledge_fts: bool = conn
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_fts'")

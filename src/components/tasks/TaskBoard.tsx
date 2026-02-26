@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Loader2, Layout, X, Save } from "lucide-react";
-import type { Task, TaskStatus, TaskPriority } from "../../lib/types";
+import type { Agent, Swarm, Task, TaskPriority, TaskStatus } from "../../lib/types";
 import { cn } from "../../lib/utils";
-import { getTasks, createTask, deleteTask } from "../../lib/tauri";
+import { getTasks, createTask, deleteTask, getAgents, getSwarms } from "../../lib/tauri";
 import { toast } from "sonner";
 import TaskCard from "./TaskCard";
 
@@ -30,6 +30,16 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
     refetchInterval: 10000,
   });
 
+  const { data: agents } = useQuery({
+    queryKey: ["agents"],
+    queryFn: getAgents,
+  });
+
+  const { data: swarms } = useQuery({
+    queryKey: ["swarms"],
+    queryFn: getSwarms,
+  });
+
   const createMutation = useMutation({
     mutationFn: createTask,
     onSuccess: () => {
@@ -53,6 +63,20 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
     if (!tasks) return [];
     return tasks.filter((t: Task) => t.status === status);
   };
+
+  // Build a swarm name lookup for display in cards
+  const swarmMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of swarms ?? []) m[s.id] = s.name;
+    return m;
+  }, [swarms]);
+
+  // Build an agent name lookup for display in cards
+  const agentMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const a of agents ?? []) m[a.id] = a.name;
+    return m;
+  }, [agents]);
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -107,6 +131,8 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
                       <TaskCard
                         key={task.id}
                         task={task}
+                        swarmName={task.swarm_id ? swarmMap[task.swarm_id] : undefined}
+                        agentName={task.assigned_agent ? agentMap[task.assigned_agent] : undefined}
                         onDelete={() => deleteMutation.mutate(task.id)}
                       />
                     ))
@@ -125,6 +151,8 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
       {/* Create Task Modal */}
       {showCreate && (
         <CreateTaskModal
+          agents={agents ?? []}
+          swarms={swarms ?? []}
           onClose={() => setShowCreate(false)}
           onSubmit={(req) => createMutation.mutate(req)}
           isPending={createMutation.isPending}
@@ -135,18 +163,52 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
 }
 
 function CreateTaskModal({
+  agents,
+  swarms,
   onClose,
   onSubmit,
   isPending,
 }: {
+  agents: Agent[];
+  swarms: Swarm[];
   onClose: () => void;
-  onSubmit: (req: { title: string; description?: string; status?: string; priority?: string }) => void;
+  onSubmit: (req: {
+    title: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    assigned_agent?: string;
+    swarm_id?: string;
+  }) => void;
   isPending: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<TaskStatus>("todo");
   const [priority, setPriority] = useState<TaskPriority>("medium");
+  const [selectedSwarmId, setSelectedSwarmId] = useState<string>("");
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("");
+
+  // When a swarm is selected, only show agents that belong to it
+  const availableAgents = useMemo(() => {
+    if (!selectedSwarmId) return agents;
+    const swarm = swarms.find((s) => s.id === selectedSwarmId);
+    if (!swarm) return agents;
+    let ids: string[] = [];
+    try { ids = JSON.parse(swarm.agent_ids); } catch { /* ignore */ }
+    return agents.filter((a) => ids.includes(a.id));
+  }, [selectedSwarmId, agents, swarms]);
+
+  // If the selected agent is no longer in the filtered list, clear it
+  const handleSwarmChange = (swarmId: string) => {
+    setSelectedSwarmId(swarmId);
+    if (swarmId) {
+      const swarm = swarms.find((s) => s.id === swarmId);
+      let ids: string[] = [];
+      try { ids = JSON.parse(swarm?.agent_ids ?? "[]"); } catch { /* ignore */ }
+      if (!ids.includes(selectedAgentId)) setSelectedAgentId("");
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,6 +218,8 @@ function CreateTaskModal({
       description: description.trim() || undefined,
       status,
       priority,
+      swarm_id: selectedSwarmId || undefined,
+      assigned_agent: selectedAgentId || undefined,
     });
   };
 
@@ -195,7 +259,7 @@ function CreateTaskModal({
           className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent mb-3 resize-none"
         />
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="block text-xs text-panel-text-dim mb-1">Status</label>
             <select
@@ -218,6 +282,40 @@ function CreateTaskModal({
             >
               {priorities.map((p) => (
                 <option key={p} value={p} className="capitalize">{p}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs text-panel-text-dim mb-1">Swarm</label>
+            <select
+              value={selectedSwarmId}
+              onChange={(e) => handleSwarmChange(e.target.value)}
+              className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:ring-1 focus:ring-panel-accent"
+            >
+              <option value="">None</option>
+              {swarms.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-panel-text-dim mb-1">
+              Agent
+              {selectedSwarmId && (
+                <span className="text-panel-text-dim/60 ml-1">(swarm members)</span>
+              )}
+            </label>
+            <select
+              value={selectedAgentId}
+              onChange={(e) => setSelectedAgentId(e.target.value)}
+              className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:ring-1 focus:ring-panel-accent"
+            >
+              <option value="">Unassigned</option>
+              {availableAgents.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
           </div>

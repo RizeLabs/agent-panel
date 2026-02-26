@@ -85,8 +85,9 @@ pub fn create_swarm(
     Ok(swarm_id)
 }
 
-/// Start a swarm: launch every member agent plus the coordinator, then kick
-/// off the asynchronous breathe loop.
+/// Start a swarm: launch only the coordinator agent, then kick off the
+/// asynchronous breathe loop and coordinator loop.  Member agents are spawned
+/// on-demand by the coordinator when it assigns tasks.
 pub async fn start_swarm(
     app_handle: AppHandle,
     state: &AppState,
@@ -103,48 +104,7 @@ pub async fn start_swarm(
             .ok_or_else(|| format!("Swarm '{}' not found", swarm_id))?
     };
 
-    // Parse agent IDs
-    let agent_ids: Vec<String> = serde_json::from_str(&swarm.agent_ids)
-        .map_err(|e| format!("Failed to parse agent_ids: {}", e))?;
-
-    // If the swarm has a goal, inject it into every member agent's system prompt
-    // so they all optimise towards the same objective.
-    if let Some(ref goal) = swarm.goal {
-        if !goal.is_empty() {
-            let goal_directive = format!(
-                "\n\n=== SWARM OBJECTIVE ===\nYou are part of the \"{}\" swarm. \
-                 Your collective goal is:\n{}\n\
-                 Every action you take should move the team closer to this objective. \
-                 Share relevant findings via the message bus and coordinate with your peers.\n\
-                 === END OBJECTIVE ===",
-                swarm.name, goal
-            );
-            for agent_id in &agent_ids {
-                if let Err(e) = inject_context_into_agent(state, agent_id, &goal_directive) {
-                    log::error!(
-                        "Failed to inject swarm goal into agent {}: {}",
-                        agent_id, e
-                    );
-                }
-            }
-        }
-    }
-
-    // Start each member agent
-    for agent_id in &agent_ids {
-        if let Err(e) = manager::spawn_agent(app_handle.clone(), state, agent_id).await {
-            log::error!("Failed to start agent {} in swarm: {}", agent_id, e);
-        }
-    }
-
-    // Clear prompt_context for all agents — goal was delivered via -p at spawn time.
-    if let Ok(conn) = state.db.lock() {
-        for agent_id in &agent_ids {
-            let _ = queries::update_agent_context(&conn, agent_id, None);
-        }
-    }
-
-    // Start the coordinator agent
+    // Start the coordinator agent — it will delegate tasks to member agents
     if let Some(ref coord_id) = swarm.coordinator_id {
         if let Err(e) = manager::spawn_agent(app_handle.clone(), state, coord_id).await {
             log::error!("Failed to start coordinator {} in swarm: {}", coord_id, e);

@@ -26,12 +26,24 @@ pub struct InputWaitInfo {
 /// Registry of agent output timestamps, keyed by agent ID.
 pub type InputWaitRegistry = Arc<Mutex<HashMap<String, InputWaitInfo>>>;
 
+/// Tracks which task an agent is currently working on and which coordinator
+/// should receive the completion report when the agent finishes.
+#[derive(Debug, Clone)]
+pub struct AgentAssignment {
+    pub task_id: String,
+    pub coordinator_id: String,
+}
+
+/// Registry of active agent task assignments, keyed by agent ID.
+pub type AgentAssignmentMap = Arc<Mutex<HashMap<String, AgentAssignment>>>;
+
 /// Global application state managed by Tauri
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub processes: ProcessRegistry,
     pub telegram_running: Mutex<bool>,
     pub input_wait: InputWaitRegistry,
+    pub agent_assignments: AgentAssignmentMap,
 }
 
 impl AppState {
@@ -43,6 +55,7 @@ impl AppState {
             processes: Arc::new(Mutex::new(HashMap::new())),
             telegram_running: Mutex::new(false),
             input_wait: Arc::new(Mutex::new(HashMap::new())),
+            agent_assignments: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -51,13 +64,11 @@ impl AppState {
         let mut procs = self.processes.lock().unwrap();
         for (id, handle) in procs.iter_mut() {
             log::info!("Shutting down agent process: {}", id);
-            // Send kill signal - best effort
             let _ = handle.child.start_kill();
         }
         procs.clear();
 
-        // Clear input-wait tracking
-        let mut waits = self.input_wait.lock().unwrap();
-        waits.clear();
+        self.input_wait.lock().unwrap().clear();
+        self.agent_assignments.lock().unwrap().clear();
     }
 }

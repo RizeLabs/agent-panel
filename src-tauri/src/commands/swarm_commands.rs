@@ -50,3 +50,8 @@ pub fn get_swarm_status(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Swarm not found".to_string())
 }
+
+#[tauri::command]
+pub fn delete_swarm(state: State<'_, AppState>, swarm_id: String) -> Result<(), String> {
+    swarm::delete_swarm(&state, &swarm_id)
+}

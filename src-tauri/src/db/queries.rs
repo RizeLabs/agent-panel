@@ -610,6 +610,16 @@ pub fn update_swarm_status(conn: &Connection, id: &str, status: &str) -> Result<
     Ok(())
 }
 
+pub fn delete_swarm(conn: &Connection, id: &str) -> Result<()> {
+    // Detach tasks that belong to this swarm rather than cascade-deleting them
+    conn.execute(
+        "UPDATE tasks SET swarm_id = NULL WHERE swarm_id = ?1",
+        params![id],
+    )?;
+    conn.execute("DELETE FROM swarms WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
 // ─── Cron Job Queries ─────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

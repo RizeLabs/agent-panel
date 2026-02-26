@@ -185,6 +185,53 @@ pub fn stop_swarm(state: &AppState, swarm_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Delete a swarm and clean up all associated resources.
+///
+/// This will:
+/// 1. Stop the swarm if it is currently running (best-effort).
+/// 2. Delete the coordinator agent from the database.
+/// 3. Remove the swarm record and detach any tasks that referenced it.
+pub fn delete_swarm(state: &AppState, swarm_id: &str) -> Result<(), String> {
+    // Fetch swarm so we know the coordinator id and member agents
+    let swarm = {
+        let conn = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        queries::get_swarm(&conn, swarm_id)
+            .map_err(|e| format!("Failed to get swarm: {}", e))?
+            .ok_or_else(|| format!("Swarm '{}' not found", swarm_id))?
+    };
+
+    // Stop the swarm first (kills running agents, marks status stopped)
+    // Ignore errors — swarm may already be stopped
+    let _ = stop_swarm(state, swarm_id);
+
+    // Delete the coordinator agent (it is owned by this swarm)
+    if let Some(ref coord_id) = swarm.coordinator_id {
+        let conn = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        if let Err(e) = queries::delete_agent(&conn, coord_id) {
+            log::warn!("Failed to delete coordinator agent {}: {}", coord_id, e);
+        }
+    }
+
+    // Remove swarm record and detach tasks
+    {
+        let conn = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+        queries::delete_swarm(&conn, swarm_id)
+            .map_err(|e| format!("Failed to delete swarm: {}", e))?;
+    }
+
+    log::info!("Swarm {} deleted", swarm_id);
+    Ok(())
+}
+
 /// Asynchronous breathe loop for a swarm.
 ///
 /// On each tick the loop:

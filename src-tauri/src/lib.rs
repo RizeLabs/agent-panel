@@ -35,6 +35,7 @@ pub fn run() {
             commands::swarm_commands::create_swarm,
             commands::swarm_commands::start_swarm,
             commands::swarm_commands::stop_swarm,
+            commands::swarm_commands::delete_swarm,
             commands::swarm_commands::get_swarm_status,
             // Message commands
             commands::message_commands::post_message,

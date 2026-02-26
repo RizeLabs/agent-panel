@@ -6,10 +6,10 @@ use crate::integrations::telegram;
 use crate::state::{AgentAssignment, AppState};
 
 /// How often the coordinator loop ticks (seconds).
-const DEFAULT_COORDINATOR_INTERVAL_SECS: u64 = 120;
+const DEFAULT_COORDINATOR_INTERVAL_SECS: u64 = 20;
 
 /// How long to wait for the coordinator to produce output after spawning (seconds).
-const COORDINATOR_OUTPUT_WAIT_SECS: u64 = 45;
+const COORDINATOR_OUTPUT_WAIT_SECS: u64 = 15;
 
 // ─── Coordinator System Prompt ────────────────────────────────
 

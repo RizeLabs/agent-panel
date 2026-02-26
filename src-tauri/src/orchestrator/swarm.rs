@@ -8,7 +8,7 @@ use crate::orchestrator::message_bus;
 use crate::state::AppState;
 
 /// Default breathe-loop interval in seconds.
-const DEFAULT_BREATHE_INTERVAL_SECS: u64 = 60;
+const DEFAULT_BREATHE_INTERVAL_SECS: u64 = 10;
 
 /// Create a new swarm in the database.
 ///

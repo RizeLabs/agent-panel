@@ -295,6 +295,44 @@ function AgentLogPanel({
   );
 }
 
+const DEFAULT_PROMPTS: Record<string, string> = {
+  coder: `You are an expert software engineer. Your job is to write clean, correct, and well-tested code.
+
+Guidelines:
+- Read existing code carefully before making changes
+- Prefer editing existing files over creating new ones
+- Write minimal, focused changes — don't refactor beyond what's asked
+- Always verify your solution compiles / passes tests before finishing
+- Share key findings and decisions via the message bus so other agents stay informed`,
+
+  researcher: `You are a research agent. Your job is to gather information, analyse it critically, and produce clear summaries.
+
+Guidelines:
+- Prioritise primary sources and official documentation
+- Clearly distinguish facts from inferences
+- Cite sources when referencing external information
+- Produce structured output (bullet points, sections) that other agents can act on
+- Post key findings to the knowledge base so the swarm benefits`,
+
+  content: `You are a content creation agent. Your job is to write clear, engaging, and accurate content.
+
+Guidelines:
+- Match tone and style to the target audience
+- Structure content logically with headings and concise paragraphs
+- Avoid filler — every sentence should add value
+- Review and self-edit before finishing
+- Flag any factual claims that need verification by the researcher agent`,
+
+  coordinator: `You are a coordination agent. Your job is to review team findings, synthesise insights, and direct next steps.
+
+Guidelines:
+- Always evaluate progress against the swarm objective
+- Assign tasks to the most appropriate agent based on their role
+- Identify gaps, blockers, and duplicated effort
+- Output your analysis as structured JSON: { insights, tasks, questions }
+- Keep tasks specific and actionable with clear acceptance criteria`,
+};
+
 function AgentConfigModal({
   agent,
   onClose,
@@ -305,18 +343,26 @@ function AgentConfigModal({
   const createAgent = useCreateAgent();
   const updateAgent = useUpdateAgent();
 
+  const isEditing = !!agent;
+
   const [name, setName] = useState(agent?.name ?? "");
   const [role, setRole] = useState<string>(agent?.role ?? "coder");
   const [model, setModel] = useState<string>(agent?.model ?? "sonnet");
   const [systemPrompt, setSystemPrompt] = useState(
-    agent?.system_prompt ?? ""
+    agent?.system_prompt ?? DEFAULT_PROMPTS["coder"]
   );
   const [workingDirectory, setWorkingDirectory] = useState(
     agent?.working_directory ?? ""
   );
   const [maxTurns, setMaxTurns] = useState(agent?.max_turns ?? 10);
 
-  const isEditing = !!agent;
+  const handleRoleChange = (newRole: string) => {
+    setRole(newRole);
+    // Only auto-fill when creating a new agent, not when editing
+    if (!isEditing) {
+      setSystemPrompt(DEFAULT_PROMPTS[newRole] ?? "");
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -384,7 +430,7 @@ function AgentConfigModal({
             </label>
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => handleRoleChange(e.target.value)}
               className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:ring-1 focus:ring-panel-accent"
             >
               {roles.map((r) => (
@@ -441,15 +487,20 @@ function AgentConfigModal({
         </div>
 
         {/* System Prompt */}
-        <label className="block text-xs text-panel-text-dim mb-1">
-          System Prompt
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-panel-text-dim">System Prompt</label>
+          {!isEditing && (
+            <span className="text-[10px] text-panel-text-dim/60">
+              auto-filled from role
+            </span>
+          )}
+        </div>
         <textarea
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
-          placeholder="Optional system prompt for the agent..."
-          rows={4}
-          className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent mb-4 resize-y"
+          placeholder="System prompt for the agent..."
+          rows={6}
+          className="w-full bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent mb-4 resize-y font-mono"
         />
 
         {/* Actions */}

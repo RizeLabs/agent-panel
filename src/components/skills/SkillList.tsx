@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { Wrench, Plus, Tag, Loader2, Zap } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Wrench, Plus, Tag, Loader2, Zap, Link, X } from "lucide-react";
+import { toast } from "sonner";
 import type { SkillDefinition } from "../../lib/types";
 import { cn } from "../../lib/utils";
-import { listSkills } from "../../lib/tauri";
+import { listSkills, importSkillFromUrl } from "../../lib/tauri";
 
 interface SkillListProps {
   onSelect: (skill: SkillDefinition) => void;
@@ -10,6 +12,11 @@ interface SkillListProps {
 }
 
 export default function SkillList({ onSelect, onCreate }: SkillListProps) {
+  const [showImport, setShowImport] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const queryClient = useQueryClient();
+
   const {
     data: skills,
     isLoading,
@@ -19,6 +26,23 @@ export default function SkillList({ onSelect, onCreate }: SkillListProps) {
     queryKey: ["skills"],
     queryFn: listSkills,
   });
+
+  const handleImport = async () => {
+    const url = importUrl.trim();
+    if (!url) return;
+    setImporting(true);
+    try {
+      const skill = await importSkillFromUrl(url);
+      toast.success(`Imported skill "${skill.name}"`);
+      queryClient.invalidateQueries({ queryKey: ["skills"] });
+      setImportUrl("");
+      setShowImport(false);
+    } catch (err) {
+      toast.error(`Import failed: ${(err as Error).message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -33,15 +57,68 @@ export default function SkillList({ onSelect, onCreate }: SkillListProps) {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onCreate}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-panel-accent/15 text-panel-accent hover:bg-panel-accent/25 transition-colors"
-        >
-          <Plus size={14} />
-          Create Skill
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowImport((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md transition-colors",
+              showImport
+                ? "bg-panel-accent text-white"
+                : "bg-panel-accent/15 text-panel-accent hover:bg-panel-accent/25"
+            )}
+          >
+            <Link size={14} />
+            Import URL
+          </button>
+          <button
+            type="button"
+            onClick={onCreate}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-panel-accent/15 text-panel-accent hover:bg-panel-accent/25 transition-colors"
+          >
+            <Plus size={14} />
+            Create Skill
+          </button>
+        </div>
       </div>
+
+      {/* Import from URL bar */}
+      {showImport && (
+        <div className="flex items-center gap-2 bg-panel-surface border border-panel-border rounded-lg p-3">
+          <input
+            type="text"
+            value={importUrl}
+            onChange={(e) => setImportUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleImport()}
+            placeholder="https://github.com/user/repo/blob/main/skills/my-skill.md"
+            className="flex-1 bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent font-mono"
+            disabled={importing}
+          />
+          <button
+            type="button"
+            onClick={handleImport}
+            disabled={importing || !importUrl.trim()}
+            className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-md bg-panel-accent text-white hover:bg-panel-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {importing ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Link size={14} />
+            )}
+            {importing ? "Importing..." : "Import"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowImport(false);
+              setImportUrl("");
+            }}
+            className="text-panel-text-dim hover:text-panel-text transition-colors p-1"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Grid */}
       {isLoading ? (

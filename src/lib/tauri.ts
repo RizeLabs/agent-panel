@@ -118,6 +118,9 @@ export const deleteSkill = (name: string) =>
 export const assignSkill = (agentId: string, skillName: string) =>
   invoke<void>("assign_skill", { agentId, skillName });
 
+export const importSkillFromUrl = (url: string) =>
+  invoke<SkillDefinition>("import_skill_from_url", { url });
+
 // ─── Task Commands ────────────────────────────────────────────
 
 export const getTasks = (status?: string, assignedAgent?: string) =>

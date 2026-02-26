@@ -21,6 +21,9 @@ pub struct InputWaitInfo {
     pub last_output_text: String,
     pub agent_name: String,
     pub notification_sent: bool,
+    /// True when the last assistant text looks like a human-directed question.
+    /// When set, a shorter silence threshold is used so the human is notified quickly.
+    pub might_need_input: bool,
 }
 
 /// Registry of agent output timestamps, keyed by agent ID.

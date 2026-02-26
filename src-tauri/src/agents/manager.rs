@@ -158,6 +158,7 @@ pub async fn spawn_agent(
                 last_output_text: String::new(),
                 agent_name: agent.name.clone(),
                 notification_sent: false,
+                might_need_input: false,
             },
         );
     }
@@ -196,6 +197,7 @@ pub async fn spawn_agent(
                         match &event {
                             StreamEvent::AssistantText { text } => {
                                 info.last_output_text = text.clone();
+                                info.might_need_input = looks_like_question(text);
                             }
                             StreamEvent::ToolUse { tool_name, tool_input } => {
                                 let preview: String = tool_input.chars().take(120).collect();
@@ -203,6 +205,7 @@ pub async fn spawn_agent(
                                     "[tool: {}] {}",
                                     tool_name, preview
                                 );
+                                info.might_need_input = false;
                             }
                             _ => {}
                         }
@@ -516,12 +519,33 @@ pub async fn send_agent_input(
         if let Some(info) = waits.get_mut(agent_id) {
             info.last_output_at = Instant::now();
             info.notification_sent = false;
+            info.might_need_input = false;
             info.last_output_text.clear();
         }
     }
 
     log::info!("Sent input to agent {}: {}", agent_id, input);
     Ok(())
+}
+
+/// Heuristic: does this assistant text look like the agent is asking the human a question?
+/// Used to switch to the short silence threshold so the human is notified quickly.
+fn looks_like_question(text: &str) -> bool {
+    let trimmed = text.trim_end();
+    if trimmed.ends_with('?') {
+        return true;
+    }
+    let lower = text.to_lowercase();
+    lower.contains("do you want")
+        || lower.contains("would you like")
+        || lower.contains("should i ")
+        || lower.contains("need your input")
+        || lower.contains("please confirm")
+        || lower.contains("let me know if")
+        || lower.contains("how would you like")
+        || lower.contains("what would you like")
+        || lower.contains("please clarify")
+        || lower.contains("need clarification")
 }
 
 /// Resume a paused agent with optional additional context injected into prompt_context.

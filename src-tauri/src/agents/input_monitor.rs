@@ -8,7 +8,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use std::time::{Duration, Instant};
 
-/// Threshold after which a running agent is considered "waiting for input".
+/// Threshold used when the agent's last output looks like a human-directed question.
+/// Short so the human is notified quickly when the agent is actively asking something.
+const QUESTION_SILENCE_THRESHOLD: Duration = Duration::from_secs(30);
+
+/// Threshold used for agents that have simply gone quiet (slow API call, processing, etc.).
 /// 5 minutes — Claude API calls regularly take 30-120s for first output, so
 /// anything shorter causes constant false-positive notifications.
 const SILENCE_THRESHOLD: Duration = Duration::from_secs(300);
@@ -52,7 +56,15 @@ pub async fn input_wait_monitor_loop(app_handle: AppHandle) {
                 if info.notification_sent {
                     continue;
                 }
-                if now.duration_since(info.last_output_at) < SILENCE_THRESHOLD {
+                // Use a shorter threshold when the agent's last output looks like
+                // a question directed at the human; otherwise wait the full 5 minutes
+                // to avoid false positives from slow API responses.
+                let threshold = if info.might_need_input {
+                    QUESTION_SILENCE_THRESHOLD
+                } else {
+                    SILENCE_THRESHOLD
+                };
+                if now.duration_since(info.last_output_at) < threshold {
                     continue;
                 }
                 if !procs.contains_key(agent_id) {

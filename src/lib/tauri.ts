@@ -136,6 +136,24 @@ export const getTasks = (status?: string, assignedAgent?: string) =>
 export const updateTask = (task: Task) =>
   invoke<void>("update_task", { task });
 
+export const createTask = (request: {
+  title: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  assigned_agent?: string;
+}) =>
+  invoke<Task>("create_task", {
+    title: request.title,
+    description: request.description,
+    status: request.status,
+    priority: request.priority,
+    assignedAgent: request.assigned_agent,
+  });
+
+export const deleteTask = (taskId: string) =>
+  invoke<void>("delete_task", { taskId });
+
 export const syncNotion = () => invoke<Task[]>("sync_notion");
 
 // ─── Settings Commands ────────────────────────────────────────

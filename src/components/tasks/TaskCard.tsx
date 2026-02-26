@@ -7,12 +7,14 @@ import {
   ArrowDown,
   Minus,
   Bot,
+  Trash2,
 } from "lucide-react";
 import type { Task, TaskPriority } from "../../lib/types";
 import { cn, priorityColor, timeAgo } from "../../lib/utils";
 
 interface TaskCardProps {
   task: Task;
+  onDelete?: () => void;
 }
 
 const priorityIcons: Record<TaskPriority, React.ElementType> = {
@@ -29,7 +31,7 @@ const priorityBadgeColors: Record<TaskPriority, string> = {
   low: "bg-panel-text-dim/15 text-panel-text-dim",
 };
 
-export default function TaskCard({ task }: TaskCardProps) {
+export default function TaskCard({ task, onDelete }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const PriorityIcon = priorityIcons[task.priority] ?? Minus;
@@ -101,20 +103,10 @@ export default function TaskCard({ task }: TaskCardProps) {
             <span className="text-panel-text-dim/70">ID:</span>{" "}
             <span className="font-mono text-panel-text">{task.id}</span>
           </div>
-          {task.notion_page_id && (
-            <div className="text-[10px] text-panel-text-dim">
-              <span className="text-panel-text-dim/70">Notion:</span>{" "}
-              <span className="font-mono text-panel-text">
-                {task.notion_page_id}
-              </span>
-            </div>
-          )}
           {task.blocked_by && (
             <div className="text-[10px] text-panel-text-dim">
               <span className="text-panel-text-dim/70">Blocked by:</span>{" "}
-              <span className="font-mono text-panel-error">
-                {task.blocked_by}
-              </span>
+              <span className="font-mono text-panel-error">{task.blocked_by}</span>
             </div>
           )}
           <div className="text-[10px] text-panel-text-dim">
@@ -123,6 +115,16 @@ export default function TaskCard({ task }: TaskCardProps) {
               {task.status.replace("_", " ")}
             </span>
           </div>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              className="flex items-center gap-1 text-[10px] text-panel-error/70 hover:text-panel-error transition-colors mt-1"
+            >
+              <Trash2 size={10} />
+              Delete task
+            </button>
+          )}
         </div>
       )}
     </button>

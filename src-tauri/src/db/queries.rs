@@ -377,6 +377,11 @@ pub fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
     Ok(())
 }
 
+pub fn delete_task(conn: &Connection, task_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM tasks WHERE id = ?1", params![task_id])?;
+    Ok(())
+}
+
 pub fn get_tasks(
     conn: &Connection,
     status: Option<&str>,

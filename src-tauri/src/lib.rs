@@ -60,6 +60,8 @@ pub fn run() {
             commands::notion_commands::sync_notion,
             commands::notion_commands::get_tasks,
             commands::notion_commands::update_task,
+            commands::notion_commands::create_task,
+            commands::notion_commands::delete_task,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

@@ -47,6 +47,7 @@ pub fn run() {
             commands::skill_commands::delete_skill,
             commands::skill_commands::assign_skill,
             commands::skill_commands::import_skill_from_url,
+            commands::skill_commands::import_skills_from_path,
             // Settings commands
             commands::settings_commands::get_settings,
             commands::settings_commands::save_settings,

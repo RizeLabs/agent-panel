@@ -1,10 +1,24 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Wrench, Plus, Tag, Loader2, Zap, Link, X } from "lucide-react";
+import {
+  Wrench,
+  Plus,
+  Tag,
+  Loader2,
+  Zap,
+  Link,
+  FolderOpen,
+  X,
+  Download,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { SkillDefinition } from "../../lib/types";
 import { cn } from "../../lib/utils";
-import { listSkills, importSkillFromUrl } from "../../lib/tauri";
+import {
+  listSkills,
+  importSkillFromUrl,
+  importSkillsFromPath,
+} from "../../lib/tauri";
 
 interface SkillListProps {
   onSelect: (skill: SkillDefinition) => void;
@@ -13,7 +27,8 @@ interface SkillListProps {
 
 export default function SkillList({ onSelect, onCreate }: SkillListProps) {
   const [showImport, setShowImport] = useState(false);
-  const [importUrl, setImportUrl] = useState("");
+  const [importMode, setImportMode] = useState<"url" | "path">("path");
+  const [importValue, setImportValue] = useState("");
   const [importing, setImporting] = useState(false);
   const queryClient = useQueryClient();
 
@@ -28,20 +43,35 @@ export default function SkillList({ onSelect, onCreate }: SkillListProps) {
   });
 
   const handleImport = async () => {
-    const url = importUrl.trim();
-    if (!url) return;
+    const value = importValue.trim();
+    if (!value) return;
     setImporting(true);
     try {
-      const skill = await importSkillFromUrl(url);
-      toast.success(`Imported skill "${skill.name}"`);
+      if (importMode === "url") {
+        const skill = await importSkillFromUrl(value);
+        toast.success(`Imported skill "${skill.name}"`);
+      } else {
+        const skills = await importSkillsFromPath(value);
+        const names = skills.map((s) => s.name).join(", ");
+        toast.success(
+          skills.length === 1
+            ? `Imported skill "${names}"`
+            : `Imported ${skills.length} skills: ${names}`
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["skills"] });
-      setImportUrl("");
+      setImportValue("");
       setShowImport(false);
     } catch (err) {
       toast.error(`Import failed: ${(err as Error).message}`);
     } finally {
       setImporting(false);
     }
+  };
+
+  const closeImport = () => {
+    setShowImport(false);
+    setImportValue("");
   };
 
   return (
@@ -68,8 +98,8 @@ export default function SkillList({ onSelect, onCreate }: SkillListProps) {
                 : "bg-panel-accent/15 text-panel-accent hover:bg-panel-accent/25"
             )}
           >
-            <Link size={14} />
-            Import URL
+            <Download size={14} />
+            Import
           </button>
           <button
             type="button"
@@ -82,41 +112,85 @@ export default function SkillList({ onSelect, onCreate }: SkillListProps) {
         </div>
       </div>
 
-      {/* Import from URL bar */}
+      {/* Import bar */}
       {showImport && (
-        <div className="flex items-center gap-2 bg-panel-surface border border-panel-border rounded-lg p-3">
-          <input
-            type="text"
-            value={importUrl}
-            onChange={(e) => setImportUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleImport()}
-            placeholder="https://github.com/user/repo/blob/main/skills/my-skill.md"
-            className="flex-1 bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent font-mono"
-            disabled={importing}
-          />
-          <button
-            type="button"
-            onClick={handleImport}
-            disabled={importing || !importUrl.trim()}
-            className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-md bg-panel-accent text-white hover:bg-panel-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {importing ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Link size={14} />
-            )}
-            {importing ? "Importing..." : "Import"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowImport(false);
-              setImportUrl("");
-            }}
-            className="text-panel-text-dim hover:text-panel-text transition-colors p-1"
-          >
-            <X size={14} />
-          </button>
+        <div className="bg-panel-surface border border-panel-border rounded-lg p-3 space-y-2.5">
+          {/* Mode toggle */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setImportMode("path");
+                setImportValue("");
+              }}
+              className={cn(
+                "flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md transition-colors",
+                importMode === "path"
+                  ? "bg-panel-accent text-white"
+                  : "text-panel-text-dim hover:text-panel-text"
+              )}
+            >
+              <FolderOpen size={12} />
+              Local Path
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setImportMode("url");
+                setImportValue("");
+              }}
+              className={cn(
+                "flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-md transition-colors",
+                importMode === "url"
+                  ? "bg-panel-accent text-white"
+                  : "text-panel-text-dim hover:text-panel-text"
+              )}
+            >
+              <Link size={12} />
+              GitHub URL
+            </button>
+          </div>
+          {/* Input row */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={importValue}
+              onChange={(e) => setImportValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleImport()}
+              placeholder={
+                importMode === "path"
+                  ? "/path/to/skills/ or /path/to/skill.md"
+                  : "https://github.com/user/repo/blob/main/skill.md"
+              }
+              className="flex-1 bg-panel-bg border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent font-mono"
+              disabled={importing}
+            />
+            <button
+              type="button"
+              onClick={handleImport}
+              disabled={importing || !importValue.trim()}
+              className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-md bg-panel-accent text-white hover:bg-panel-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              {importing ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              {importing ? "Importing..." : "Import"}
+            </button>
+            <button
+              type="button"
+              onClick={closeImport}
+              className="text-panel-text-dim hover:text-panel-text transition-colors p-1 shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <p className="text-[10px] text-panel-text-dim/60">
+            {importMode === "path"
+              ? "Point to a .md file or a directory of .md files. Each must have YAML frontmatter (--- delimiters)."
+              : "Paste a GitHub .md link — blob URLs are auto-converted to raw."}
+          </p>
         </div>
       )}
 

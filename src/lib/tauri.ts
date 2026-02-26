@@ -121,6 +121,9 @@ export const assignSkill = (agentId: string, skillName: string) =>
 export const importSkillFromUrl = (url: string) =>
   invoke<SkillDefinition>("import_skill_from_url", { url });
 
+export const importSkillsFromPath = (path: string) =>
+  invoke<SkillDefinition[]>("import_skills_from_path", { path });
+
 // ─── Task Commands ────────────────────────────────────────────
 
 export const getTasks = (status?: string, assignedAgent?: string) =>

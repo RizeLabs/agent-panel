@@ -138,13 +138,10 @@ async fn handle_get_messages(
 
 // ─── Server startup ──────────────────────────────────────────
 
-/// Start the MCP HTTP server on a random localhost port.
-/// Returns the port so callers can inject it into agent env vars.
+/// Start the MCP HTTP server using the provided SQLite connection.
+/// Returns the port the server is listening on.
 /// Spawns the server as a background tokio task.
-pub async fn start_mcp_server() -> Result<u16, String> {
-    let conn = schema::open_db_connection()
-        .map_err(|e| format!("MCP server: failed to open DB: {}", e))?;
-
+pub async fn start_mcp_server_with_conn(conn: Connection) -> Result<u16, String> {
     let state = McpState {
         db: Arc::new(Mutex::new(conn)),
     };
@@ -174,4 +171,12 @@ pub async fn start_mcp_server() -> Result<u16, String> {
 
     log::info!("MCP HTTP server listening on http://127.0.0.1:{}", port);
     Ok(port)
+}
+
+/// Start the MCP HTTP server against the real on-disk database.
+/// Called at app startup.
+pub async fn start_mcp_server() -> Result<u16, String> {
+    let conn = schema::open_db_connection()
+        .map_err(|e| format!("MCP server: failed to open DB: {}", e))?;
+    start_mcp_server_with_conn(conn).await
 }

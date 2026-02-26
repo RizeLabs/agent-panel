@@ -19,6 +19,15 @@ fn dirs_next() -> Option<PathBuf> {
     None
 }
 
+/// Create an in-memory SQLite database with all migrations applied.
+/// Used exclusively in integration tests — each call returns a fresh, isolated DB.
+pub fn create_test_db() -> Result<Connection> {
+    let conn = Connection::open_in_memory()?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    run_migrations(&conn)?;
+    Ok(conn)
+}
+
 /// Open a connection to the same DB file without re-running migrations.
 /// Used by secondary threads (e.g., MCP server) that need their own handle.
 /// WAL mode allows concurrent readers alongside the main writer.

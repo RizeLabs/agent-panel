@@ -9,7 +9,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use std::time::{Duration, Instant};
 
 /// Threshold after which a running agent is considered "waiting for input".
-const SILENCE_THRESHOLD: Duration = Duration::from_secs(30);
+/// 5 minutes — Claude API calls regularly take 30-120s for first output, so
+/// anything shorter causes constant false-positive notifications.
+const SILENCE_THRESHOLD: Duration = Duration::from_secs(300);
 
 /// How often the monitor loop ticks.
 const CHECK_INTERVAL: Duration = Duration::from_secs(5);

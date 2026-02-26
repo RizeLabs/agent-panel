@@ -360,39 +360,45 @@ fn handle_stream_event(app_handle: &AppHandle, agent_id: &str, event: &StreamEve
 
 /// Stop a running agent by killing its process and updating the DB.
 pub fn stop_agent(state: &AppState, agent_id: &str) -> Result<(), String> {
-    // Remove from process registry and kill
-    let mut handle = {
+    // Remove from process registry and kill (if still running).
+    // An agent may have already exited naturally (max_turns reached); that is
+    // not an error — we still update the DB to reflect the stopped state.
+    let maybe_handle = {
         let mut procs = state
             .processes
             .lock()
             .map_err(|e| format!("Process registry lock error: {}", e))?;
-        procs
-            .remove(agent_id)
-            .ok_or_else(|| format!("No running process found for agent: {}", agent_id))?
+        procs.remove(agent_id)
     };
 
-    // Send kill signal (sync version)
-    handle
-        .child
-        .start_kill()
-        .map_err(|e| format!("Failed to kill process for agent {}: {}", agent_id, e))?;
+    if let Some(mut handle) = maybe_handle {
+        // Send kill signal (sync version)
+        handle
+            .child
+            .start_kill()
+            .map_err(|e| format!("Failed to kill process for agent {}: {}", agent_id, e))?;
 
-    // Remove from input-wait tracker
+        // Update DB with the session_id we have in hand
+        let db = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+        queries::update_agent_status(&db, agent_id, "stopped")
+            .map_err(|e| format!("DB error: {}", e))?;
+        queries::update_agent_process(&db, agent_id, None, Some(&handle.session_id))
+            .map_err(|e| format!("DB error: {}", e))?;
+    } else {
+        // Process already exited on its own — just mark DB as stopped.
+        log::debug!("stop_agent: {} has no live process, marking stopped in DB", agent_id);
+        let db = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+        queries::update_agent_status(&db, agent_id, "stopped")
+            .map_err(|e| format!("DB error: {}", e))?;
+    }
+
+    // Remove from input-wait tracker regardless
     {
         let mut waits = state
             .input_wait
             .lock()
             .map_err(|e| format!("Input wait lock error: {}", e))?;
         waits.remove(agent_id);
-    }
-
-    // Update DB
-    {
-        let db = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-        queries::update_agent_status(&db, agent_id, "stopped")
-            .map_err(|e| format!("DB error: {}", e))?;
-        queries::update_agent_process(&db, agent_id, None, Some(&handle.session_id))
-            .map_err(|e| format!("DB error: {}", e))?;
     }
 
     log::info!("Agent {} stopped", agent_id);

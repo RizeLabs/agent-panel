@@ -59,6 +59,15 @@ pub async fn spawn_agent(
         return Err(format!("Agent {} is already running", agent_id));
     }
 
+    // ── 1b. Ensure claude-mem is configured for this agent ──
+    if let Some(ref wd) = agent.working_directory {
+        if !wd.is_empty() {
+            if let Err(e) = crate::integrations::claude_mem::ensure_claude_mem_configured(wd) {
+                log::warn!("Could not configure claude-mem for agent {}: {}", agent_id, e);
+            }
+        }
+    }
+
     // ── 2. Build the command ─────────────────────────────────
     let mut cmd = Command::new("claude");
 

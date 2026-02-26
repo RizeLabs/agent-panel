@@ -53,8 +53,12 @@ export const getAgentLogs = (agentId: string, limit?: number) =>
 
 export const createSwarm = (request: {
   name: string;
-  agent_ids: string[];
   goal?: string;
+  agent_configs: Array<{
+    agent_id: string;
+    system_prompt?: string;
+    skills?: string[];
+  }>;
 }) => invoke<string>("create_swarm", { request });
 
 export const startSwarm = (swarmId: string) =>

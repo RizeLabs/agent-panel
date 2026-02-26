@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager};
 
 use crate::agents::manager;
+use crate::commands::swarm_commands::SwarmAgentConfig;
 use crate::db::queries::{self, Swarm};
 use crate::orchestrator::coordinator;
 use crate::orchestrator::message_bus;
@@ -19,9 +20,43 @@ const DEFAULT_BREATHE_INTERVAL_SECS: u64 = 60;
 pub fn create_swarm(
     state: &AppState,
     name: &str,
-    agent_ids: Vec<String>,
+    agent_configs: Vec<SwarmAgentConfig>,
     goal: Option<String>,
 ) -> Result<String, String> {
+    // Apply per-agent prompt and skills overrides before creating the swarm
+    {
+        let conn = state
+            .db
+            .lock()
+            .map_err(|e| format!("DB lock error: {}", e))?;
+
+        for config in &agent_configs {
+            if config.system_prompt.is_none() && config.skills.is_none() {
+                continue;
+            }
+
+            let mut agent = queries::get_agent_by_id(&conn, &config.agent_id)
+                .map_err(|e| format!("Failed to get agent {}: {}", config.agent_id, e))?
+                .ok_or_else(|| format!("Agent '{}' not found", config.agent_id))?;
+
+            if let Some(ref prompt) = config.system_prompt {
+                agent.system_prompt = Some(prompt.clone());
+            }
+            if let Some(ref skills) = config.skills {
+                agent.skills = serde_json::to_string(skills)
+                    .map_err(|e| format!("Failed to serialize skills: {}", e))?;
+            }
+
+            queries::update_agent(&conn, &agent)
+                .map_err(|e| format!("Failed to update agent {}: {}", config.agent_id, e))?;
+
+            log::info!("Updated agent '{}' config for swarm '{}'", config.agent_id, name);
+        }
+    }
+
+    // Extract agent IDs from configs
+    let agent_ids: Vec<String> = agent_configs.iter().map(|c| c.agent_id.clone()).collect();
+
     // Create the coordinator agent first
     let coordinator_id = coordinator::create_coordinator_agent(state, name, goal.as_deref())?;
 

@@ -98,6 +98,12 @@ pub async fn spawn_agent(
         }
     }
 
+    // Inject Mission Control API env vars so agents can post to the message bus
+    if let Some(port) = crate::mcp::MCP_PORT.get() {
+        cmd.env("MC_API_URL", format!("http://127.0.0.1:{}", port));
+        cmd.env("MC_AGENT_ID", agent_id);
+    }
+
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -283,15 +289,53 @@ pub async fn spawn_agent(
 }
 
 /// Helper: compose base system_prompt + ephemeral prompt_context into `-p` for fresh sessions.
+/// Also appends the Mission Control API reference so every agent knows how to post messages.
 fn add_prompt_args(cmd: &mut Command, agent: &queries::Agent) {
     let base = agent.system_prompt.as_deref().unwrap_or("").trim();
     let ctx  = agent.prompt_context.as_deref().unwrap_or("").trim();
-    let full_prompt = match (base.is_empty(), ctx.is_empty()) {
-        (true,  true)  => return,
+    let mut full_prompt = match (base.is_empty(), ctx.is_empty()) {
+        (true,  true)  => String::new(),
         (false, true)  => base.to_string(),
         (true,  false) => ctx.to_string(),
         (false, false) => format!("{}\n\n{}", base, ctx),
     };
+
+    // Append Mission Control API docs so agents can collaborate via the message bus.
+    if let Some(port) = crate::mcp::MCP_PORT.get() {
+        let api_docs = format!(
+            "\n\n\
+## Mission Control Collaboration API\n\
+Your agent ID is available as the environment variable $MC_AGENT_ID.\n\
+Base URL: $MC_API_URL (http://127.0.0.1:{port})\n\
+\n\
+### Post a message to the shared feed\n\
+Use message_type: insight | finding | question | task_update | request | response\n\
+```bash\n\
+curl -s -X POST $MC_API_URL/message \\\n\
+  -H 'Content-Type: application/json' \\\n\
+  -d '{{\"agent_id\":\"'$MC_AGENT_ID'\",\"message_type\":\"insight\",\"content\":\"your message here\"}}'\n\
+```\n\
+\n\
+### Add a permanent entry to the knowledge base\n\
+```bash\n\
+curl -s -X POST $MC_API_URL/knowledge \\\n\
+  -H 'Content-Type: application/json' \\\n\
+  -d '{{\"agent_id\":\"'$MC_AGENT_ID'\",\"category\":\"research\",\"title\":\"Short title\",\"content\":\"Detailed content\"}}'\n\
+```\n\
+\n\
+### Read messages addressed to you\n\
+```bash\n\
+curl -s \"$MC_API_URL/messages?agent_id=$MC_AGENT_ID\"\n\
+```\n\
+\n\
+Use these tools frequently to share progress, discoveries, and questions with other agents and the human operator.",
+        );
+        full_prompt.push_str(&api_docs);
+    }
+
+    if full_prompt.is_empty() {
+        return;
+    }
     cmd.arg("-p").arg(full_prompt);
 }
 

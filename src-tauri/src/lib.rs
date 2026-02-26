@@ -2,6 +2,7 @@ pub mod agents;
 pub mod commands;
 pub mod db;
 pub mod integrations;
+pub mod mcp;
 pub mod orchestrator;
 pub mod skills;
 pub mod state;
@@ -88,6 +89,17 @@ pub fn run() {
             // Spawn global cron runner (30 s poll)
             tauri::async_runtime::spawn(async move {
                 orchestrator::cron_runner::cron_runner_loop(handle3).await;
+            });
+
+            // Start the MCP HTTP server so agents can post to the message bus
+            tauri::async_runtime::block_on(async {
+                match mcp::start_mcp_server().await {
+                    Ok(port) => {
+                        mcp::MCP_PORT.set(port).ok();
+                        log::info!("MCP server ready on port {}", port);
+                    }
+                    Err(e) => log::error!("Failed to start MCP server: {}", e),
+                }
             });
 
             Ok(())

@@ -19,6 +19,17 @@ fn dirs_next() -> Option<PathBuf> {
     None
 }
 
+/// Open a connection to the same DB file without re-running migrations.
+/// Used by secondary threads (e.g., MCP server) that need their own handle.
+/// WAL mode allows concurrent readers alongside the main writer.
+pub fn open_db_connection() -> Result<Connection> {
+    let path = db_path();
+    let conn = Connection::open(&path)?;
+    conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    Ok(conn)
+}
+
 /// Initialize the database and run migrations
 pub fn initialize_db() -> Result<Connection> {
     let path = db_path();

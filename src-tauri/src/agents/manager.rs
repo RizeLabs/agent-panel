@@ -193,8 +193,18 @@ pub async fn spawn_agent(
                     if let Some(info) = waits.get_mut(&agent_id_owned) {
                         info.last_output_at = Instant::now();
                         info.notification_sent = false;
-                        if let StreamEvent::AssistantText { text } = &event {
-                            info.last_output_text = text.clone();
+                        match &event {
+                            StreamEvent::AssistantText { text } => {
+                                info.last_output_text = text.clone();
+                            }
+                            StreamEvent::ToolUse { tool_name, tool_input } => {
+                                let preview: String = tool_input.chars().take(120).collect();
+                                info.last_output_text = format!(
+                                    "[tool: {}] {}",
+                                    tool_name, preview
+                                );
+                            }
+                            _ => {}
                         }
                     }
                 }

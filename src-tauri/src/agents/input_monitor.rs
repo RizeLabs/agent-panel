@@ -75,6 +75,53 @@ pub async fn input_wait_monitor_loop(app_handle: AppHandle) {
         }; // locks dropped
 
         for (agent_id, agent_name, last_output) in agents_to_notify {
+            // Look up agent role and resolve display output in one DB lock.
+            // - Coordinator agents are skipped: they route human questions via their
+            //   own JSON output mechanism, not via the silence monitor.
+            // - If last_output is empty (e.g. agent is still waiting for its first
+            //   API response), fall back to the most recent DB log entry.
+            let (role, display_output) = {
+                let db = match state.db.lock() {
+                    Ok(db) => db,
+                    Err(_) => continue,
+                };
+                let role = queries::get_agent_by_id(&db, &agent_id)
+                    .ok()
+                    .flatten()
+                    .map(|a| a.role)
+                    .unwrap_or_default();
+
+                let output = if !last_output.is_empty() {
+                    last_output.clone()
+                } else {
+                    // Grab most recent assistant or tool log as fallback
+                    queries::get_agent_logs(&db, &agent_id, 10)
+                        .ok()
+                        .and_then(|logs| {
+                            logs.into_iter()
+                                .find(|l| {
+                                    l.log_type == "assistant" || l.log_type == "tool_use"
+                                })
+                                .map(|l| {
+                                    let preview: String = l.content.chars().take(300).collect();
+                                    format!("[{}] {}", l.log_type, preview)
+                                })
+                        })
+                        .unwrap_or_else(|| "(agent processing — no output captured yet)".to_string())
+                };
+
+                (role, output)
+            };
+
+            // Coordinators are internal; skip silence notifications for them.
+            if role == "coordinator" {
+                log::debug!(
+                    "input_monitor: skipping coordinator agent {}",
+                    agent_id
+                );
+                continue;
+            }
+
             // Emit frontend event
             let _ = app_handle.emit(
                 "agent-waiting-input",
@@ -82,7 +129,7 @@ pub async fn input_wait_monitor_loop(app_handle: AppHandle) {
                     agent_id: agent_id.clone(),
                     agent_name: agent_name.clone(),
                     waiting: true,
-                    last_output: last_output.clone(),
+                    last_output: display_output.clone(),
                 },
             );
 
@@ -126,7 +173,7 @@ pub async fn input_wait_monitor_loop(app_handle: AppHandle) {
 
             if let (Some(token), Some(chat)) = (bot_token, chat_id) {
                 if let Err(e) =
-                    telegram::notify_human_needed(&token, &chat, &agent_name, &last_output).await
+                    telegram::notify_human_needed(&token, &chat, &agent_name, &display_output).await
                 {
                     log::warn!("Failed to send Telegram input-wait notification: {}", e);
                 }

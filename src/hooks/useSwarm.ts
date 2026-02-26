@@ -3,6 +3,7 @@ import {
   createSwarm,
   startSwarm,
   stopSwarm,
+  deleteSwarm,
   getSwarmStatus,
   getSwarms,
 } from "../lib/tauri";
@@ -49,6 +50,19 @@ export function useStopSwarm() {
       toast.success("Swarm stopped");
     },
     onError: (err: Error) => toast.error(`Failed to stop swarm: ${err.message}`),
+  });
+}
+
+export function useDeleteSwarm() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (swarmId: string) => deleteSwarm(swarmId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["swarm"] });
+      queryClient.invalidateQueries({ queryKey: ["swarms"] });
+      toast.success("Swarm deleted");
+    },
+    onError: (err: Error) => toast.error(`Failed to delete swarm: ${err.message}`),
   });
 }
 

@@ -14,6 +14,7 @@ import {
   EyeOff,
   ChevronDown,
   ChevronUp,
+  Trash2,
 } from "lucide-react";
 import type { Swarm, Agent, SkillDefinition } from "../../lib/types";
 import { cn, statusDotColor, parseJsonSafe, timeAgo } from "../../lib/utils";
@@ -25,6 +26,7 @@ import {
   useCreateSwarm,
   useStartSwarm,
   useStopSwarm,
+  useDeleteSwarm,
 } from "../../hooks/useSwarm";
 
 export default function SwarmView({
@@ -38,6 +40,7 @@ export default function SwarmView({
   const { data: swarms = [], isLoading } = useSwarms();
   const startSwarm = useStartSwarm();
   const stopSwarm = useStopSwarm();
+  const deleteSwarm = useDeleteSwarm();
 
   // Keep the selected swarm in sync for the graph/other tabs
   const selectedSwarm = swarms.find((s) => s.id === selectedId) ?? null;
@@ -103,8 +106,13 @@ export default function SwarmView({
               }
               onStart={() => startSwarm.mutate(swarm.id)}
               onStop={() => stopSwarm.mutate(swarm.id)}
+              onDelete={() => {
+                setSelectedId((prev) => (prev === swarm.id ? null : prev));
+                deleteSwarm.mutate(swarm.id);
+              }}
               startPending={startSwarm.isPending}
               stopPending={stopSwarm.isPending}
+              deletePending={deleteSwarm.isPending}
             />
           ))}
         </div>
@@ -130,17 +138,22 @@ function SwarmCard({
   onSelect,
   onStart,
   onStop,
+  onDelete,
   startPending,
   stopPending,
+  deletePending,
 }: {
   swarm: Swarm;
   selected: boolean;
   onSelect: () => void;
   onStart: () => void;
   onStop: () => void;
+  onDelete: () => void;
   startPending: boolean;
   stopPending: boolean;
+  deletePending: boolean;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const agentIds = parseJsonSafe<string[]>(swarm.agent_ids, []);
   const { data: agents = [] } = useAgents();
 
@@ -279,8 +292,45 @@ function SwarmCard({
             )}
           </div>
 
-          <div className="text-[11px] text-panel-text-dim font-mono">
-            id: {swarm.id}
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] text-panel-text-dim font-mono">
+              id: {swarm.id}
+            </div>
+
+            {/* Delete with inline confirmation */}
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-panel-error">Delete swarm?</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDelete(false);
+                    onDelete();
+                  }}
+                  disabled={deletePending}
+                  className="text-[11px] px-2 py-0.5 rounded bg-panel-error text-white hover:bg-panel-error/80 transition-colors disabled:opacity-50"
+                >
+                  Confirm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-[11px] px-2 py-0.5 rounded bg-panel-border text-panel-text-dim hover:text-panel-text transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={deletePending}
+                className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded text-panel-error/70 hover:text-panel-error hover:bg-panel-error/10 transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={11} />
+                Delete
+              </button>
+            )}
           </div>
         </div>
       )}

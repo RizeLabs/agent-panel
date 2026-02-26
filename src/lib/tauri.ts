@@ -72,6 +72,9 @@ export const startSwarm = (swarmId: string) =>
 export const stopSwarm = (swarmId: string) =>
   invoke<void>("stop_swarm", { swarmId });
 
+export const deleteSwarm = (swarmId: string) =>
+  invoke<void>("delete_swarm", { swarmId });
+
 export const getSwarmStatus = (swarmId: string) =>
   invoke<Swarm>("get_swarm_status", { swarmId });
 

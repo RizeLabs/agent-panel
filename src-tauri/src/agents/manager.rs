@@ -1,6 +1,6 @@
 use crate::agents::output_parser::{self, StreamEvent};
 use crate::db::queries;
-use crate::state::{AppState, InputWaitInfo, ProcessHandle};
+use crate::state::{AgentAssignment, AppState, InputWaitInfo, ProcessHandle};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -231,6 +231,42 @@ pub async fn spawn_agent(
                     exit_session_id.as_deref(),
                 );
             }
+
+            // Post completion report to coordinator if this agent had an assignment
+            let assignment: Option<AgentAssignment> = {
+                let mut assignments = state_exit.agent_assignments.lock().unwrap();
+                assignments.remove(&agent_id_owned)
+            };
+            if let Some(ref assignment) = assignment {
+                let summary = {
+                    let db = state_exit.db.lock().unwrap();
+                    queries::get_agent_logs(&db, &agent_id_owned, 20)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|l| l.log_type == "assistant")
+                        .map(|l| l.content)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                let report = format!(
+                    "COMPLETION REPORT\nAgent: {}\nTask ID: {}\n\nWork output:\n{}",
+                    agent_id_owned, assignment.task_id, summary
+                );
+                let db = state_exit.db.lock().unwrap();
+                let _ = queries::insert_message(
+                    &db,
+                    &agent_id_owned,
+                    Some(&assignment.coordinator_id),
+                    "completion_report",
+                    &report,
+                    None,
+                );
+                log::info!(
+                    "Agent {} posted completion report for task {} to coordinator {}",
+                    agent_id_owned, assignment.task_id, assignment.coordinator_id
+                );
+            }
+
             let _ = handle_clone.emit(
                 "agent-status-change",
                 AgentStatusPayload {

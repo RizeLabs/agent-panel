@@ -384,6 +384,14 @@ pub fn delete_task(conn: &Connection, task_id: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn update_task_status(conn: &Connection, task_id: &str, status: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE tasks SET status=?1, updated_at=CURRENT_TIMESTAMP WHERE id=?2",
+        params![status, task_id],
+    )?;
+    Ok(())
+}
+
 pub fn get_tasks(
     conn: &Connection,
     status: Option<&str>,

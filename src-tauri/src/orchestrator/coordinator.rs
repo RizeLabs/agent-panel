@@ -187,45 +187,53 @@ pub async fn coordinator_loop(app_handle: AppHandle, coordinator_id: &str, swarm
 
         // ── 2. Build synthesis prompt with full state ─────────
         // Collect all DB data in a sync block, drop conn, then proceed.
-        let synthesis_result: Result<String, String> = {
-            match state.db.lock() {
-                Err(e) => Err(format!("DB lock error: {}", e)),
-                Ok(conn) => {
-                    let tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
-                    let agents = queries::get_all_agents(&conn).unwrap_or_default();
-                    let knowledge = queries::get_knowledge(&conn, None, 20).unwrap_or_default();
+        // Skip the coordinator spawn entirely if agents have produced no new
+        // messages since the last cycle — avoids burning API calls on idle swarms.
+        let synthesis_result: Result<Option<String>, String> = (|| {
+            let conn = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
 
-                    // Use conn directly — do NOT call message_bus here, it would
-                    // try to re-lock state.db causing a deadlock.
-                    let messages = queries::get_unread_messages_for_agent(&conn, coordinator_id)
-                        .unwrap_or_default();
+            // Use conn directly — do NOT call message_bus here, it would
+            // try to re-lock state.db causing a deadlock.
+            let messages = queries::get_unread_messages_for_agent(&conn, coordinator_id)
+                .unwrap_or_default();
 
-                    // Mark messages read while conn is still in scope
-                    if !messages.is_empty() {
-                        let ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-                        let _ = queries::mark_messages_read(&conn, &ids, coordinator_id);
-                    }
-
-                    Ok(build_synthesis_prompt(
-                        swarm_goal.as_deref(),
-                        &swarm_name,
-                        &tasks,
-                        &agents,
-                        &knowledge,
-                        &messages,
-                    ))
-                    // conn dropped here
-                }
+            if messages.is_empty() {
+                // Nothing new — skip this cycle entirely.
+                return Ok(None);
             }
-        };
+
+            let tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
+            let agents = queries::get_all_agents(&conn).unwrap_or_default();
+            let knowledge = queries::get_knowledge(&conn, None, 20).unwrap_or_default();
+
+            // Mark messages read while conn is still in scope
+            let ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+            let _ = queries::mark_messages_read(&conn, &ids, coordinator_id);
+
+            Ok(Some(build_synthesis_prompt(
+                swarm_goal.as_deref(),
+                &swarm_name,
+                &tasks,
+                &agents,
+                &knowledge,
+                &messages,
+            )))
+            // conn dropped here
+        })();
 
         let synthesis = match synthesis_result {
-            Ok(s) => s,
             Err(e) => {
                 log::error!("Coordinator loop: failed to build synthesis: {}", e);
                 tokio::time::sleep(interval).await; // safe: no lock held
                 continue;
             }
+            Ok(None) => {
+                // No new agent messages — nothing to synthesize this tick.
+                log::debug!("Coordinator loop: no new messages for {}, skipping spawn", coordinator_id);
+                tokio::time::sleep(interval).await;
+                continue;
+            }
+            Ok(Some(s)) => s,
         };
 
         // ── 3. Clear session, update prompt ───────────────────

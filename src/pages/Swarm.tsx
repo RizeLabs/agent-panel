@@ -1,0 +1,74 @@
+import { useState } from "react";
+import { MessageSquare, BookOpen, Network } from "lucide-react";
+import { cn } from "../lib/utils";
+import SwarmView from "../components/swarm/SwarmView";
+import MessageFeed from "../components/swarm/MessageFeed";
+import KnowledgeBase from "../components/swarm/KnowledgeBase";
+
+type BottomTab = "messages" | "knowledge";
+
+export default function Swarm() {
+  const [activeTab, setActiveTab] = useState<BottomTab>("messages");
+
+  return (
+    <div className="flex flex-col h-full gap-4">
+      {/* Top: Swarm View */}
+      <div className="shrink-0">
+        <SwarmView />
+      </div>
+
+      {/* Bottom: Tabbed section */}
+      <div className="flex-1 flex flex-col bg-panel-surface border border-panel-border rounded-lg overflow-hidden min-h-0">
+        {/* Tab Bar */}
+        <div className="flex items-center border-b border-panel-border shrink-0">
+          <TabButton
+            active={activeTab === "messages"}
+            onClick={() => setActiveTab("messages")}
+            icon={MessageSquare}
+            label="Message Feed"
+          />
+          <TabButton
+            active={activeTab === "knowledge"}
+            onClick={() => setActiveTab("knowledge")}
+            icon={BookOpen}
+            label="Knowledge Base"
+          />
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 min-h-0">
+          {activeTab === "messages" && <MessageFeed />}
+          {activeTab === "knowledge" && <KnowledgeBase />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ElementType;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px",
+        active
+          ? "text-panel-accent border-panel-accent"
+          : "text-panel-text-dim border-transparent hover:text-panel-text hover:border-panel-border"
+      )}
+    >
+      <Icon size={14} />
+      {label}
+    </button>
+  );
+}

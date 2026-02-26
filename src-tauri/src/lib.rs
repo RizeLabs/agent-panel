@@ -29,6 +29,7 @@ pub fn run() {
             commands::agent_commands::stop_agent,
             commands::agent_commands::pause_agent,
             commands::agent_commands::resume_agent,
+            commands::agent_commands::send_agent_input,
             commands::agent_commands::get_agent_logs,
             // Swarm commands
             commands::swarm_commands::create_swarm,

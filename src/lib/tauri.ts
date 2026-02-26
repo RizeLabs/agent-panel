@@ -46,6 +46,9 @@ export const resumeAgent = (
 ) =>
   invoke<void>("resume_agent", { agentId, additionalContext });
 
+export const sendAgentInput = (agentId: string, input: string) =>
+  invoke<void>("send_agent_input", { agentId, input });
+
 export const getAgentLogs = (agentId: string, limit?: number) =>
   invoke<AgentLog[]>("get_agent_logs", { agentId, limit });
 

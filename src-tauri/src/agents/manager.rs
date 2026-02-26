@@ -97,6 +97,7 @@ pub async fn spawn_agent(
         }
     }
 
+    cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
@@ -106,6 +107,7 @@ pub async fn spawn_agent(
         .map_err(|e| format!("Failed to spawn claude process: {}", e))?;
 
     let pid = child.id().map(|p| p as i64);
+    let stdin = child.stdin.take();
     let stdout = child
         .stdout
         .take()
@@ -131,6 +133,7 @@ pub async fn spawn_agent(
             ProcessHandle {
                 child,
                 session_id: agent.session_id.clone().unwrap_or_default(),
+                stdin,
             },
         );
     }
@@ -295,6 +298,58 @@ pub fn stop_agent(state: &AppState, agent_id: &str) -> Result<(), String> {
     }
 
     log::info!("Agent {} stopped", agent_id);
+    Ok(())
+}
+
+/// Send input text to a running agent's stdin.
+pub async fn send_agent_input(
+    state: &AppState,
+    agent_id: &str,
+    input: &str,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    // Take the ChildStdin out of the ProcessHandle so we can drop the lock
+    // before awaiting async I/O (MutexGuard is not Send).
+    let mut taken_stdin = {
+        let mut procs = state
+            .processes
+            .lock()
+            .map_err(|e| format!("Process registry lock error: {}", e))?;
+
+        let handle = procs
+            .get_mut(agent_id)
+            .ok_or_else(|| format!("No running process found for agent: {}", agent_id))?;
+
+        handle
+            .stdin
+            .take()
+            .ok_or_else(|| format!("No stdin handle for agent: {}", agent_id))?
+    }; // MutexGuard is dropped here
+
+    let data = format!("{}\n", input);
+    let write_result = taken_stdin.write_all(data.as_bytes()).await;
+    let flush_result = if write_result.is_ok() {
+        taken_stdin.flush().await
+    } else {
+        Ok(())
+    };
+
+    // Put the stdin back into the ProcessHandle
+    {
+        let mut procs = state
+            .processes
+            .lock()
+            .map_err(|e| format!("Process registry lock error: {}", e))?;
+        if let Some(handle) = procs.get_mut(agent_id) {
+            handle.stdin = Some(taken_stdin);
+        }
+    }
+
+    write_result.map_err(|e| format!("Failed to write to agent stdin: {}", e))?;
+    flush_result.map_err(|e| format!("Failed to flush agent stdin: {}", e))?;
+
+    log::info!("Sent input to agent {}: {}", agent_id, input);
     Ok(())
 }
 

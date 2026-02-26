@@ -2,7 +2,7 @@ use crate::db;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::process::Child;
+use tokio::process::{Child, ChildStdin};
 
 /// Registry of running agent processes keyed by agent ID
 pub type ProcessRegistry = Arc<Mutex<HashMap<String, ProcessHandle>>>;
@@ -10,6 +10,7 @@ pub type ProcessRegistry = Arc<Mutex<HashMap<String, ProcessHandle>>>;
 pub struct ProcessHandle {
     pub child: Child,
     pub session_id: String,
+    pub stdin: Option<ChildStdin>,
 }
 
 /// Global application state managed by Tauri

@@ -7,9 +7,12 @@ import {
   Loader2,
   Terminal,
   ArrowLeft,
+  SendHorizonal,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { Agent, AgentLog, CreateAgentRequest, ModelType, AgentRole } from "../lib/types";
 import { cn, statusDotColor, timeAgo } from "../lib/utils";
+import { sendAgentInput } from "../lib/tauri";
 import {
   useAgents,
   useCreateAgent,
@@ -140,6 +143,22 @@ function AgentLogPanel({
   onEdit: (agent: Agent) => void;
 }) {
   const { data: logs, isLoading } = useAgentLogs(agentId);
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const handleSendInput = async () => {
+    const text = inputText.trim();
+    if (!text) return;
+    setSending(true);
+    try {
+      await sendAgentInput(agentId, text);
+      setInputText("");
+    } catch (err) {
+      toast.error(`Failed to send input: ${(err as Error).message}`);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const logTypeColors: Record<string, string> = {
     stdout: "text-panel-text",
@@ -223,6 +242,34 @@ function AgentLogPanel({
           </p>
         )}
       </div>
+
+      {/* Input bar — visible when agent is running */}
+      {agent?.status === "running" && (
+        <div className="flex items-center gap-2 px-3 py-2 border-t border-panel-border shrink-0">
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSendInput()}
+            placeholder="Send input to agent..."
+            disabled={sending}
+            className="flex-1 bg-panel-bg border border-panel-border rounded-md px-3 py-1.5 text-xs text-panel-text placeholder:text-panel-text-dim/50 focus:outline-none focus:ring-1 focus:ring-panel-accent font-mono"
+          />
+          <button
+            type="button"
+            onClick={handleSendInput}
+            disabled={sending || !inputText.trim()}
+            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md bg-panel-accent text-white hover:bg-panel-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          >
+            {sending ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <SendHorizonal size={12} />
+            )}
+            Send
+          </button>
+        </div>
+      )}
     </div>
   );
 }

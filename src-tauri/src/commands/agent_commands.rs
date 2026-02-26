@@ -158,6 +158,15 @@ pub async fn resume_agent(
 }
 
 #[tauri::command]
+pub async fn send_agent_input(
+    state: State<'_, AppState>,
+    agent_id: String,
+    input: String,
+) -> Result<(), String> {
+    manager::send_agent_input(&state, &agent_id, &input).await
+}
+
+#[tauri::command]
 pub fn get_agent_logs(
     state: State<'_, AppState>,
     agent_id: String,

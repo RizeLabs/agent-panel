@@ -17,14 +17,15 @@ pub struct Agent {
     pub status: String,
     pub pid: Option<i64>,
     pub session_id: Option<String>,
+    pub prompt_context: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
 pub fn insert_agent(conn: &Connection, agent: &Agent) -> Result<()> {
     conn.execute(
-        "INSERT INTO agents (id, name, role, system_prompt, working_directory, model, max_turns, skills, env_vars, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO agents (id, name, role, system_prompt, working_directory, model, max_turns, skills, env_vars, status, prompt_context)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             agent.id,
             agent.name,
@@ -36,6 +37,7 @@ pub fn insert_agent(conn: &Connection, agent: &Agent) -> Result<()> {
             agent.skills,
             agent.env_vars,
             agent.status,
+            agent.prompt_context,
         ],
     )?;
     Ok(())
@@ -44,7 +46,7 @@ pub fn insert_agent(conn: &Connection, agent: &Agent) -> Result<()> {
 pub fn get_all_agents(conn: &Connection) -> Result<Vec<Agent>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, role, system_prompt, working_directory, model, max_turns,
-                skills, env_vars, status, pid, session_id, created_at, updated_at
+                skills, env_vars, status, pid, session_id, prompt_context, created_at, updated_at
          FROM agents ORDER BY created_at DESC",
     )?;
     let agents = stmt
@@ -62,8 +64,9 @@ pub fn get_all_agents(conn: &Connection) -> Result<Vec<Agent>> {
                 status: row.get(9)?,
                 pid: row.get(10)?,
                 session_id: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                prompt_context: row.get(12)?,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -73,7 +76,7 @@ pub fn get_all_agents(conn: &Connection) -> Result<Vec<Agent>> {
 pub fn get_agent_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> {
     let mut stmt = conn.prepare(
         "SELECT id, name, role, system_prompt, working_directory, model, max_turns,
-                skills, env_vars, status, pid, session_id, created_at, updated_at
+                skills, env_vars, status, pid, session_id, prompt_context, created_at, updated_at
          FROM agents WHERE id = ?1",
     )?;
     let mut agents = stmt
@@ -91,8 +94,9 @@ pub fn get_agent_by_id(conn: &Connection, id: &str) -> Result<Option<Agent>> {
                 status: row.get(9)?,
                 pid: row.get(10)?,
                 session_id: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
+                prompt_context: row.get(12)?,
+                created_at: row.get(13)?,
+                updated_at: row.get(14)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -116,6 +120,14 @@ pub fn update_agent_process(
     conn.execute(
         "UPDATE agents SET pid = ?1, session_id = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
         params![pid, session_id, id],
+    )?;
+    Ok(())
+}
+
+pub fn update_agent_context(conn: &Connection, id: &str, context: Option<&str>) -> Result<()> {
+    conn.execute(
+        "UPDATE agents SET prompt_context = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        params![context, id],
     )?;
     Ok(())
 }

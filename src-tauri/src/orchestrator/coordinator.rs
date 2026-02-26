@@ -71,6 +71,7 @@ pub fn create_coordinator_agent(
         status: "idle".to_string(),
         pid: None,
         session_id: None,
+        prompt_context: None,
         created_at: String::new(),
         updated_at: String::new(),
     };
@@ -183,7 +184,7 @@ pub async fn coordinator_loop(
             }
         }
 
-        // Inject the synthesis prompt into the coordinator agent
+        // Write synthesis prompt into ephemeral prompt_context (replaces, never appends).
         {
             let conn = match state.db.lock() {
                 Ok(c) => c,
@@ -192,33 +193,22 @@ pub async fn coordinator_loop(
                     continue;
                 }
             };
-            let agent = match queries::get_agent_by_id(&conn, coordinator_id) {
-                Ok(Some(a)) => a,
-                Ok(None) => {
-                    log::error!("Coordinator agent {} not found", coordinator_id);
-                    return;
-                }
-                Err(e) => {
-                    log::error!("Coordinator loop: failed to get agent: {}", e);
-                    continue;
-                }
-            };
-
-            let base = coordinator_system_prompt(swarm_goal.as_deref());
-            let updated_prompt = format!("{}\n\n{}", base, synthesis_prompt);
-            let mut updated_agent = agent.clone();
-            updated_agent.system_prompt = Some(updated_prompt);
-
-            if let Err(e) = queries::update_agent(&conn, &updated_agent) {
+            if let Err(e) = queries::update_agent_context(&conn, coordinator_id, Some(&synthesis_prompt)) {
                 log::error!(
-                    "Coordinator loop: failed to update agent prompt: {}",
+                    "Coordinator loop: failed to update context: {}",
                     e
                 );
                 continue;
             }
         }
 
-        // Stop the coordinator (if running) and restart it with the updated prompt
+        // Clear session_id so each synthesis run is a fresh session
+        // (coordinator context is not continuous across runs).
+        if let Ok(conn) = state.db.lock() {
+            let _ = queries::update_agent_process(&conn, coordinator_id, None, None);
+        }
+
+        // Stop the coordinator (if running) and restart it with the updated prompt_context.
         let _ = manager::stop_agent(&state, coordinator_id);
         if let Err(e) =
             manager::spawn_agent(app_handle.clone(), &state, coordinator_id).await
@@ -228,6 +218,11 @@ pub async fn coordinator_loop(
                 e
             );
             continue;
+        }
+
+        // Clear prompt_context — delivered via -p on this fresh session.
+        if let Ok(conn) = state.db.lock() {
+            let _ = queries::update_agent_context(&conn, coordinator_id, None);
         }
 
         // Allow some time for the coordinator to produce output, then parse it
@@ -354,6 +349,25 @@ fn process_coordinator_output(
                     updated_at: String::new(),
                 };
                 let _ = queries::insert_task(&conn, &new_task);
+
+                // Notify the assigned agent via the message bus so the breathe loop
+                // picks it up and delivers it on the next cycle.
+                if let Some(ref assigned) = task.assigned_to {
+                    let task_msg = format!(
+                        "You have been assigned a new task:\nTitle: {}\nDescription: {}\nPriority: {}",
+                        new_task.title,
+                        new_task.description.as_deref().unwrap_or(""),
+                        new_task.priority,
+                    );
+                    let _ = queries::insert_message(
+                        &conn,
+                        coordinator_id,
+                        Some(assigned),
+                        "task_update",
+                        &task_msg,
+                        None,
+                    );
+                }
             }
 
             // Broadcast questions for human review

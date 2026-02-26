@@ -246,13 +246,17 @@ pub async fn spawn_agent(
     Ok(())
 }
 
-/// Helper: add `-p "<system_prompt>"` to the command when not resuming.
+/// Helper: compose base system_prompt + ephemeral prompt_context into `-p` for fresh sessions.
 fn add_prompt_args(cmd: &mut Command, agent: &queries::Agent) {
-    if let Some(ref prompt) = agent.system_prompt {
-        if !prompt.is_empty() {
-            cmd.arg("-p").arg(prompt);
-        }
-    }
+    let base = agent.system_prompt.as_deref().unwrap_or("").trim();
+    let ctx  = agent.prompt_context.as_deref().unwrap_or("").trim();
+    let full_prompt = match (base.is_empty(), ctx.is_empty()) {
+        (true,  true)  => return,
+        (false, true)  => base.to_string(),
+        (true,  false) => ctx.to_string(),
+        (false, false) => format!("{}\n\n{}", base, ctx),
+    };
+    cmd.arg("-p").arg(full_prompt);
 }
 
 /// Process a single parsed stream event: emit Tauri events and persist the log.
@@ -424,24 +428,18 @@ pub async fn send_agent_input(
     Ok(())
 }
 
-/// Resume a paused agent with optional additional context injected into the prompt.
+/// Resume a paused agent with optional additional context injected into prompt_context.
 pub async fn resume_agent(
     app_handle: AppHandle,
     state: &AppState,
     agent_id: &str,
     additional_context: Option<String>,
 ) -> Result<(), String> {
-    // Optionally inject additional context into the agent's system prompt
+    // Write context to the ephemeral prompt_context column (replaces, never appends)
     if let Some(ref context) = additional_context {
         let db = state.db.lock().map_err(|e| format!("DB lock error: {}", e))?;
-        let agent = queries::get_agent_by_id(&db, agent_id)
-            .map_err(|e| format!("DB error: {}", e))?
-            .ok_or_else(|| format!("Agent not found: {}", agent_id))?;
-        let current_prompt = agent.system_prompt.clone().unwrap_or_default();
-        let updated_prompt = format!("{}\n\n{}", current_prompt, context);
-        let mut updated_agent = agent;
-        updated_agent.system_prompt = Some(updated_prompt);
-        queries::update_agent(&db, &updated_agent).map_err(|e| format!("DB error: {}", e))?;
+        queries::update_agent_context(&db, agent_id, Some(context))
+            .map_err(|e| format!("DB error: {}", e))?;
     }
 
     // Spawn the agent - it will use --resume if session_id exists

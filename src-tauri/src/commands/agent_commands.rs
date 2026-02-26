@@ -52,6 +52,7 @@ pub fn create_agent(
         status: "idle".to_string(),
         pid: None,
         session_id: None,
+        prompt_context: None,
         created_at: String::new(),
         updated_at: String::new(),
     };
@@ -102,6 +103,7 @@ pub fn update_agent(
         status: String::new(),
         pid: None,
         session_id: None,
+        prompt_context: None,
         created_at: String::new(),
         updated_at: String::new(),
     };

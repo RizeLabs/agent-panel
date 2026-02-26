@@ -118,6 +118,7 @@ pub fn create_coordinator_agent(
         status: "idle".to_string(),
         pid: None,
         session_id: None,
+        prompt_context: None,
         created_at: String::new(),
         updated_at: String::new(),
     };
@@ -552,6 +553,11 @@ async fn process_coordinator_output(
             continue;
         }
 
+        // Clear prompt_context — delivered via -p on this fresh session.
+        if let Ok(conn) = state.db.lock() {
+            let _ = queries::update_agent_context(&conn, agent_id, None);
+        }
+
         // Register assignment so completion report is routed to coordinator
         {
             let mut assignments = state.agent_assignments.lock().unwrap();
@@ -596,6 +602,11 @@ async fn process_coordinator_output(
         {
             log::error!("Failed to restart agent {} after rejection: {}", agent_id, e);
             continue;
+        }
+
+        // Clear prompt_context — delivered via -p on this fresh session.
+        if let Ok(conn) = state.db.lock() {
+            let _ = queries::update_agent_context(&conn, agent_id, None);
         }
 
         // Re-register assignment
@@ -661,28 +672,16 @@ async fn process_coordinator_output(
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-/// Append context text to an agent's system prompt in the database.
+/// Replace the agent's ephemeral prompt_context with new context.
+/// Never touches system_prompt — prevents unbounded growth.
 fn inject_context_into_agent(
     state: &AppState,
     agent_id: &str,
     context: &str,
 ) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
-
-    let agent = queries::get_agent_by_id(&conn, agent_id)
-        .map_err(|e| format!("Failed to get agent: {}", e))?
-        .ok_or_else(|| format!("Agent '{}' not found", agent_id))?;
-
-    let base = agent.system_prompt.clone().unwrap_or_default();
-    let updated = format!("{}\n{}", base, context);
-
-    let mut updated_agent = agent;
-    updated_agent.system_prompt = Some(updated);
-
-    queries::update_agent(&conn, &updated_agent)
-        .map_err(|e| format!("Failed to update agent prompt: {}", e))?;
-
-    Ok(())
+    queries::update_agent_context(&conn, agent_id, Some(context))
+        .map_err(|e| format!("Failed to update agent context: {}", e))
 }
 
 fn extract_json_from_text(text: &str) -> Option<String> {

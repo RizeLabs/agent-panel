@@ -280,8 +280,19 @@ pub async fn breathe_loop(app_handle: AppHandle, swarm_id: &str) {
                 );
             }
 
-            // Append context to the agent's system prompt so the resumed session
-            // sees the new messages.
+            // Capture whether agent has a session before stopping it.
+            // Resumed sessions need context delivered via stdin; fresh sessions get it via -p.
+            let has_session = {
+                let conn = state.db.lock().unwrap();
+                queries::get_agent_by_id(&conn, agent_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|a| a.session_id)
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false)
+            };
+
+            // Replace prompt_context (NEVER appends to system_prompt)
             if let Err(e) = inject_context_into_agent(&state, agent_id, &context) {
                 log::error!(
                     "Breathe loop: failed to inject context for {}: {}",
@@ -297,17 +308,34 @@ pub async fn breathe_loop(app_handle: AppHandle, swarm_id: &str) {
                 continue;
             }
 
-            // Restart with --resume so the agent picks up from where it left off
-            // plus the newly injected context.
+            // Restart: fresh sessions get context via -p (composed in add_prompt_args);
+            // resumed sessions need it delivered via stdin after startup.
             if let Err(e) = manager::spawn_agent(app_handle.clone(), &state, agent_id).await {
                 log::error!("Breathe loop: failed to restart agent {}: {}", agent_id, e);
+                continue;
+            }
+
+            // For resumed sessions, deliver context via stdin now that the process is up.
+            if has_session {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if let Err(e) = manager::send_agent_input(&state, agent_id, &context).await {
+                    log::error!(
+                        "Breathe loop: stdin delivery failed for {}: {}",
+                        agent_id, e
+                    );
+                }
+            }
+
+            // Clear prompt_context — it has been delivered (stdin or -p).
+            if let Ok(conn) = state.db.lock() {
+                let _ = queries::update_agent_context(&conn, agent_id, None);
             }
         }
     }
 }
 
-/// Append context text to an agent's system prompt in the database so that when
-/// it is next started/resumed it will see the injected messages.
+/// Replace the agent's ephemeral prompt_context with new context.
+/// Never touches system_prompt — no unbounded growth.
 fn inject_context_into_agent(
     state: &AppState,
     agent_id: &str,
@@ -318,18 +346,8 @@ fn inject_context_into_agent(
         .lock()
         .map_err(|e| format!("DB lock error: {}", e))?;
 
-    let agent = queries::get_agent_by_id(&conn, agent_id)
-        .map_err(|e| format!("Failed to get agent: {}", e))?
-        .ok_or_else(|| format!("Agent '{}' not found", agent_id))?;
+    log::info!("inject_context_into_agent {}: setting prompt_context ({} bytes)", agent_id, context.len());
 
-    let current_prompt = agent.system_prompt.clone().unwrap_or_default();
-    let updated_prompt = format!("{}\n{}", current_prompt, context);
-
-    let mut updated_agent = agent;
-    updated_agent.system_prompt = Some(updated_prompt);
-
-    queries::update_agent(&conn, &updated_agent)
-        .map_err(|e| format!("Failed to update agent prompt: {}", e))?;
-
-    Ok(())
+    queries::update_agent_context(&conn, agent_id, Some(context))
+        .map_err(|e| format!("Failed to update agent context: {}", e))
 }

@@ -49,6 +49,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             status TEXT DEFAULT 'idle',
             pid INTEGER,
             session_id TEXT,
+            prompt_context TEXT DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -117,6 +118,16 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         );
         ",
     )?;
+
+    // Migration: add prompt_context column to agents if missing (for existing DBs)
+    let has_prompt_context: bool = conn
+        .prepare("SELECT prompt_context FROM agents LIMIT 0")
+        .is_ok();
+    if !has_prompt_context {
+        conn.execute_batch(
+            "ALTER TABLE agents ADD COLUMN prompt_context TEXT DEFAULT NULL;",
+        )?;
+    }
 
     // Migration: add goal column to swarms if missing (for existing DBs)
     let has_goal_col: bool = conn

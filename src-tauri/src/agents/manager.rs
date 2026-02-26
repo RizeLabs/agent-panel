@@ -204,10 +204,18 @@ pub async fn spawn_agent(
         };
 
         if still_registered {
-            {
+            // Capture session_id from the handle before removing it, so it can be
+            // persisted for future --resume. The handle's session_id is kept up-to-date
+            // by handle_stream_event whenever a Result event is received.
+            let exit_session_id = {
                 let mut procs = state_exit.processes.lock().unwrap();
+                let sid = procs
+                    .get(&agent_id_owned)
+                    .map(|h| h.session_id.clone())
+                    .filter(|s| !s.is_empty());
                 procs.remove(&agent_id_owned);
-            }
+                sid
+            };
             // Remove from input-wait tracker
             {
                 let mut waits = state_exit.input_wait.lock().unwrap();
@@ -216,14 +224,19 @@ pub async fn spawn_agent(
             {
                 let db = state_exit.db.lock().unwrap();
                 let _ = queries::update_agent_status(&db, &agent_id_owned, "stopped");
-                let _ = queries::update_agent_process(&db, &agent_id_owned, None, None);
+                let _ = queries::update_agent_process(
+                    &db,
+                    &agent_id_owned,
+                    None,
+                    exit_session_id.as_deref(),
+                );
             }
             let _ = handle_clone.emit(
                 "agent-status-change",
                 AgentStatusPayload {
                     agent_id: agent_id_owned.clone(),
                     status: "stopped".to_string(),
-                    session_id: None,
+                    session_id: exit_session_id,
                 },
             );
             log::info!("Agent {} process exited, marked as stopped", agent_id_owned);
@@ -446,7 +459,8 @@ pub async fn health_monitor_loop(app_handle: AppHandle) {
 
     loop {
         interval.tick().await;
-        let mut dead_agents: Vec<String> = Vec::new();
+        // Carry (agent_id, session_id) so the session can be preserved across restarts.
+        let mut dead_agents: Vec<(String, Option<String>)> = Vec::new();
 
         // Check each registered process
         {
@@ -459,7 +473,8 @@ pub async fn health_monitor_loop(app_handle: AppHandle) {
                 match handle.child.try_wait() {
                     Ok(Some(_exit_status)) => {
                         // Process has exited unexpectedly
-                        dead_agents.push(agent_id.clone());
+                        let sid = Some(handle.session_id.clone()).filter(|s| !s.is_empty());
+                        dead_agents.push((agent_id.clone(), sid));
                     }
                     Ok(None) => {
                         // Still running, all good
@@ -470,13 +485,14 @@ pub async fn health_monitor_loop(app_handle: AppHandle) {
                             agent_id,
                             e
                         );
-                        dead_agents.push(agent_id.clone());
+                        let sid = Some(handle.session_id.clone()).filter(|s| !s.is_empty());
+                        dead_agents.push((agent_id.clone(), sid));
                     }
                 }
             }
 
             // Remove dead agents from registry
-            for id in &dead_agents {
+            for (id, _) in &dead_agents {
                 procs.remove(id);
             }
         }
@@ -484,10 +500,10 @@ pub async fn health_monitor_loop(app_handle: AppHandle) {
         // Update DB and emit events for dead agents
         if !dead_agents.is_empty() {
             if let Ok(db) = state_ref.db.lock() {
-                for id in &dead_agents {
+                for (id, session_id) in &dead_agents {
                     log::warn!("Health monitor: agent {} process died unexpectedly", id);
                     let _ = queries::update_agent_status(&db, id, "error");
-                    let _ = queries::update_agent_process(&db, id, None, None);
+                    let _ = queries::update_agent_process(&db, id, None, session_id.as_deref());
                     let _ = queries::insert_log(
                         &db,
                         id,
@@ -500,7 +516,7 @@ pub async fn health_monitor_loop(app_handle: AppHandle) {
                         AgentStatusPayload {
                             agent_id: id.clone(),
                             status: "error".to_string(),
-                            session_id: None,
+                            session_id: session_id.clone(),
                         },
                     );
 

@@ -344,8 +344,13 @@ fn build_synthesis_prompt(
             ));
             if let Some(ref desc) = task.description {
                 if !desc.is_empty() {
-                    let truncated =
-                        if desc.len() > 120 { &desc[..120] } else { desc };
+                    let truncated_owned: String;
+                    let truncated = if desc.chars().count() > 120 {
+                        truncated_owned = desc.chars().take(120).collect();
+                        truncated_owned.as_str()
+                    } else {
+                        desc.as_str()
+                    };
                     s.push_str(&format!("      {}\n", truncated));
                 }
             }
@@ -369,8 +374,9 @@ fn build_synthesis_prompt(
     if !knowledge.is_empty() {
         s.push_str("RECENT KNOWLEDGE:\n");
         for entry in knowledge.iter().take(15) {
-            let snippet = if entry.content.len() > 150 {
-                format!("{}…", &entry.content[..150])
+            let snippet = if entry.content.chars().count() > 150 {
+                let t: String = entry.content.chars().take(150).collect();
+                format!("{}…", t)
             } else {
                 entry.content.clone()
             };
@@ -413,17 +419,24 @@ async fn process_coordinator_output(
 ) -> Result<(), String> {
     let state = app_handle.state::<AppState>();
 
-    // Grab last few log entries from the coordinator
+    // Grab recent log entries from the coordinator.
+    // Claude streams output in multiple chunks stored as separate rows, so we
+    // grab the last 50 and concatenate all assistant-type content before
+    // searching for JSON.  This handles both single-chunk and multi-chunk output.
     let logs = {
         let conn = state.db.lock().map_err(|e| format!("DB lock: {}", e))?;
-        queries::get_agent_logs(&conn, coordinator_id, 10)
+        queries::get_agent_logs(&conn, coordinator_id, 50)
             .map_err(|e| format!("Failed to get logs: {}", e))?
     };
 
-    // Find JSON in the output
-    let json_str = logs
+    let combined_output: String = logs
         .iter()
-        .find_map(|l| extract_json_from_text(&l.content))
+        .filter(|l| l.log_type == "assistant")
+        .map(|l| l.content.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let json_str = extract_json_from_text(&combined_output)
         .ok_or_else(|| "No JSON found in coordinator output".to_string())?;
 
     let parsed: CoordinatorOutput = serde_json::from_str(&json_str)
@@ -693,12 +706,49 @@ fn inject_context_into_agent(
         .map_err(|e| format!("Failed to update agent context: {}", e))
 }
 
+/// Scan `text` for all complete top-level JSON objects using balanced-brace
+/// counting and return the LAST (rightmost) one found.
+///
+/// Returning the last object rather than the first avoids picking up any
+/// `{...}` fragments in prose that the model emits before the actual JSON
+/// output (e.g. "assign agent {name} to task {id}").  String literals are
+/// handled so braces inside quoted values are not counted.
 fn extract_json_from_text(text: &str) -> Option<String> {
-    let start = text.find('{')?;
-    let end = text.rfind('}')?;
-    if end > start {
-        Some(text[start..=end].to_string())
-    } else {
-        None
+    let bytes = text.as_bytes();
+    let n = bytes.len();
+    let mut last_valid: Option<(usize, usize)> = None; // (start, end) byte indices
+    let mut i = 0;
+
+    while i < n {
+        if bytes[i] == b'{' {
+            let start = i;
+            let mut depth = 0usize;
+            let mut in_string = false;
+            let mut j = i;
+
+            while j < n {
+                match bytes[j] {
+                    // Skip escaped character inside a string
+                    b'\\' if in_string => { j += 2; continue; }
+                    b'"' => in_string = !in_string,
+                    b'{' if !in_string => depth += 1,
+                    b'}' if !in_string => {
+                        depth -= 1;
+                        if depth == 0 {
+                            last_valid = Some((start, j));
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+            // Advance past this object (or just past the opening brace if unclosed)
+            i = if let Some((_, end)) = last_valid { end + 1 } else { i + 1 };
+        } else {
+            i += 1;
+        }
     }
+
+    last_valid.map(|(s, e)| text[s..=e].to_string())
 }

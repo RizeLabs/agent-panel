@@ -58,8 +58,9 @@ pub async fn input_wait_monitor_loop(app_handle: AppHandle) {
                 }
 
                 info.notification_sent = true;
-                let last_text = if info.last_output_text.len() > 500 {
-                    format!("{}…", &info.last_output_text[..500])
+                let last_text = if info.last_output_text.chars().count() > 500 {
+                    let truncated: String = info.last_output_text.chars().take(500).collect();
+                    format!("{}…", truncated)
                 } else {
                     info.last_output_text.clone()
                 };

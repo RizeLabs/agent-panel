@@ -1,0 +1,151 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type {
+  Agent,
+  AgentLog,
+  AgentLogEvent,
+  AgentStatusEvent,
+  CreateAgentRequest,
+  Knowledge,
+  Message,
+  Settings,
+  SkillDefinition,
+  Swarm,
+  Task,
+  UpdateAgentRequest,
+} from "./types";
+
+// ─── Agent Commands ───────────────────────────────────────────
+
+export const createAgent = (request: CreateAgentRequest) =>
+  invoke<Agent>("create_agent", { request });
+
+export const getAgents = () => invoke<Agent[]>("get_agents");
+
+export const getAgent = (agentId: string) =>
+  invoke<Agent>("get_agent", { agentId });
+
+export const updateAgent = (request: UpdateAgentRequest) =>
+  invoke<Agent>("update_agent", { request });
+
+export const deleteAgent = (agentId: string) =>
+  invoke<void>("delete_agent", { agentId });
+
+export const startAgent = (agentId: string) =>
+  invoke<void>("start_agent", { agentId });
+
+export const stopAgent = (agentId: string) =>
+  invoke<void>("stop_agent", { agentId });
+
+export const pauseAgent = (agentId: string) =>
+  invoke<void>("pause_agent", { agentId });
+
+export const resumeAgent = (
+  agentId: string,
+  additionalContext?: string
+) =>
+  invoke<void>("resume_agent", { agentId, additionalContext });
+
+export const getAgentLogs = (agentId: string, limit?: number) =>
+  invoke<AgentLog[]>("get_agent_logs", { agentId, limit });
+
+// ─── Swarm Commands ───────────────────────────────────────────
+
+export const createSwarm = (request: { name: string; agent_ids: string[] }) =>
+  invoke<string>("create_swarm", { request });
+
+export const startSwarm = (swarmId: string) =>
+  invoke<void>("start_swarm", { swarmId });
+
+export const stopSwarm = (swarmId: string) =>
+  invoke<void>("stop_swarm", { swarmId });
+
+export const getSwarmStatus = (swarmId: string) =>
+  invoke<Swarm>("get_swarm_status", { swarmId });
+
+// ─── Message Commands ─────────────────────────────────────────
+
+export const postMessage = (request: {
+  from_agent: string;
+  to_agent?: string;
+  message_type: string;
+  content: string;
+  metadata?: string;
+}) => invoke<number>("post_message", { request });
+
+export const getMessages = (request?: {
+  agent_id?: string;
+  message_type?: string;
+  limit?: number;
+}) => invoke<Message[]>("get_messages", { request: request ?? {} });
+
+export const getKnowledge = (params?: {
+  category?: string;
+  search?: string;
+  limit?: number;
+}) =>
+  invoke<Knowledge[]>("get_knowledge", params ?? {});
+
+export const addKnowledge = (request: {
+  agent_id: string;
+  category: string;
+  title: string;
+  content: string;
+  tags?: string[];
+}) => invoke<number>("add_knowledge", { request });
+
+// ─── Skill Commands ───────────────────────────────────────────
+
+export const listSkills = () =>
+  invoke<SkillDefinition[]>("list_skills");
+
+export const getSkill = (name: string) =>
+  invoke<SkillDefinition>("get_skill", { name });
+
+export const saveSkill = (skill: SkillDefinition) =>
+  invoke<void>("save_skill", { skill });
+
+export const deleteSkill = (name: string) =>
+  invoke<void>("delete_skill", { name });
+
+export const assignSkill = (agentId: string, skillName: string) =>
+  invoke<void>("assign_skill", { agentId, skillName });
+
+// ─── Task Commands ────────────────────────────────────────────
+
+export const getTasks = (status?: string, assignedAgent?: string) =>
+  invoke<Task[]>("get_tasks", { status, assignedAgent });
+
+export const updateTask = (task: Task) =>
+  invoke<void>("update_task", { task });
+
+export const syncNotion = () => invoke<Task[]>("sync_notion");
+
+// ─── Settings Commands ────────────────────────────────────────
+
+export const getSettings = () => invoke<Settings>("get_settings");
+
+export const saveSettings = (settings: Record<string, string>) =>
+  invoke<void>("save_settings", { settings });
+
+// ─── Telegram Commands ────────────────────────────────────────
+
+export const testTelegram = () => invoke<string>("test_telegram");
+
+export const startTelegramBot = () => invoke<void>("start_telegram_bot");
+
+export const stopTelegramBot = () => invoke<void>("stop_telegram_bot");
+
+// ─── Event Listeners ──────────────────────────────────────────
+
+export const onAgentLog = (
+  callback: (event: AgentLogEvent) => void
+): Promise<UnlistenFn> =>
+  listen<AgentLogEvent>("agent-log", (event) => callback(event.payload));
+
+export const onAgentStatusChange = (
+  callback: (event: AgentStatusEvent) => void
+): Promise<UnlistenFn> =>
+  listen<AgentStatusEvent>("agent-status-change", (event) =>
+    callback(event.payload)
+  );

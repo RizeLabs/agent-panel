@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Loader2, Layout, X, Save } from "lucide-react";
 import type { Agent, Swarm, Task, TaskPriority, TaskStatus } from "../../lib/types";
@@ -23,8 +23,16 @@ interface TaskBoardProps {
 export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const draggedTaskId = useRef<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Refs so global mouse handlers never go stale
+  const pendingDragRef = useRef<{ taskId: string; startX: number; startY: number } | null>(null);
+  const draggingTaskIdRef = useRef<string | null>(null);
+  const dragOverStatusRef = useRef<TaskStatus | null>(null);
+  const tasksRef = useRef<Task[]>([]);
+  const columnRefs = useRef<Partial<Record<TaskStatus, HTMLDivElement>>>({});
+  const updateMutateFnRef = useRef<((task: Task) => void) | null>(null);
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -41,6 +49,9 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
     queryKey: ["swarms"],
     queryFn: getSwarms,
   });
+
+  // Keep tasksRef in sync with latest query data
+  useEffect(() => { tasksRef.current = tasks ?? []; }, [tasks]);
 
   const createMutation = useMutation({
     mutationFn: createTask,
@@ -69,24 +80,95 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
     onError: (e) => toast.error(`Failed to update task: ${(e as Error).message}`),
   });
 
+  // Keep mutate fn ref in sync
+  updateMutateFnRef.current = updateMutation.mutate;
+
   const moveTask = (task: Task, newStatus: TaskStatus) => {
     if (task.status === newStatus) return;
     updateMutation.mutate({ ...task, status: newStatus });
   };
+
+  // Global mouse handlers for drag-and-drop (avoids HTML5 DnD issues in Tauri webview)
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const pending = pendingDragRef.current;
+      if (!pending) return;
+
+      // Activate drag only after moving 5px (prevents accidental drags on clicks)
+      if (!draggingTaskIdRef.current) {
+        const dx = Math.abs(e.clientX - pending.startX);
+        const dy = Math.abs(e.clientY - pending.startY);
+        if (dx > 5 || dy > 5) {
+          draggingTaskIdRef.current = pending.taskId;
+          setIsDragging(true);
+          document.body.style.cursor = "grabbing";
+          document.body.style.userSelect = "none";
+        }
+      }
+
+      if (!draggingTaskIdRef.current) return;
+
+      // Find which column the mouse is over using bounding rects
+      let found: TaskStatus | null = null;
+      for (const { status } of columns) {
+        const el = columnRefs.current[status];
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (
+          e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom
+        ) {
+          found = status;
+          break;
+        }
+      }
+
+      if (found !== dragOverStatusRef.current) {
+        dragOverStatusRef.current = found;
+        setDragOverStatus(found);
+      }
+    };
+
+    const handleMouseUp = () => {
+      const taskId = draggingTaskIdRef.current;
+      const targetStatus = dragOverStatusRef.current;
+
+      if (taskId && targetStatus) {
+        const task = tasksRef.current.find((t) => t.id === taskId);
+        if (task && task.status !== targetStatus) {
+          updateMutateFnRef.current?.({ ...task, status: targetStatus });
+        }
+      }
+
+      // Reset all drag state
+      pendingDragRef.current = null;
+      draggingTaskIdRef.current = null;
+      dragOverStatusRef.current = null;
+      setDragOverStatus(null);
+      setIsDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []); // empty deps — all state accessed via refs
 
   const getTasksByStatus = (status: TaskStatus): Task[] => {
     if (!tasks) return [];
     return tasks.filter((t: Task) => t.status === status);
   };
 
-  // Build a swarm name lookup for display in cards
   const swarmMap = useMemo(() => {
     const m: Record<string, string> = {};
     for (const s of swarms ?? []) m[s.id] = s.name;
     return m;
   }, [swarms]);
 
-  // Build an agent name lookup for display in cards
   const agentMap = useMemo(() => {
     const m: Record<string, string> = {};
     for (const a of agents ?? []) m[a.id] = a.name;
@@ -94,7 +176,7 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
   }, [agents]);
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className={cn("flex flex-col gap-4 h-full", isDragging && "cursor-grabbing")}>
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
@@ -127,22 +209,7 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
             return (
               <div
                 key={status}
-                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverStatus(status); }}
-                onDragLeave={(e) => {
-                  // Only clear if leaving to outside the column, not to a child element
-                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                    setDragOverStatus(null);
-                  }
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragOverStatus(null);
-                  const id = e.dataTransfer.getData("text/plain") || draggedTaskId.current;
-                  if (!id || !tasks) return;
-                  const task = tasks.find((t: Task) => t.id === id);
-                  if (task) moveTask(task, status);
-                  draggedTaskId.current = null;
-                }}
+                ref={(el) => { if (el) columnRefs.current[status] = el; }}
                 className={cn(
                   "flex flex-col bg-panel-surface/50 border border-panel-border rounded-lg overflow-hidden border-t-2 transition-colors duration-100",
                   color,
@@ -170,10 +237,12 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
                         swarmName={task.swarm_id ? swarmMap[task.swarm_id] : undefined}
                         agentName={task.assigned_agent ? agentMap[task.assigned_agent] : undefined}
                         onDelete={() => deleteMutation.mutate(task.id)}
-                        onDragStart={(e) => {
-                          draggedTaskId.current = task.id;
-                          e.dataTransfer.setData("text/plain", task.id);
-                          e.dataTransfer.effectAllowed = "move";
+                        onPickUp={(e) => {
+                          pendingDragRef.current = {
+                            taskId: task.id,
+                            startX: e.clientX,
+                            startY: e.clientY,
+                          };
                         }}
                         onStatusChange={(newStatus) => moveTask(task, newStatus)}
                       />
@@ -234,7 +303,6 @@ function CreateTaskModal({
   const [selectedSwarmId, setSelectedSwarmId] = useState<string>("");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
 
-  // When a swarm is selected, only show agents that belong to it
   const availableAgents = useMemo(() => {
     if (!selectedSwarmId) return agents;
     const swarm = swarms.find((s) => s.id === selectedSwarmId);
@@ -244,7 +312,6 @@ function CreateTaskModal({
     return agents.filter((a) => ids.includes(a.id));
   }, [selectedSwarmId, agents, swarms]);
 
-  // If the selected agent is no longer in the filtered list, clear it
   const handleSwarmChange = (swarmId: string) => {
     setSelectedSwarmId(swarmId);
     if (swarmId) {

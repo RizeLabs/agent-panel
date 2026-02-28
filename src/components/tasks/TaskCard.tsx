@@ -9,6 +9,7 @@ import {
   Bot,
   Layers,
   Trash2,
+  GripVertical,
 } from "lucide-react";
 import type { Task, TaskPriority, TaskStatus } from "../../lib/types";
 import { cn, priorityColor, timeAgo } from "../../lib/utils";
@@ -18,7 +19,7 @@ interface TaskCardProps {
   swarmName?: string;
   agentName?: string;
   onDelete?: () => void;
-  onDragStart?: (e: React.DragEvent) => void;
+  onPickUp?: (e: React.MouseEvent) => void;
   onStatusChange?: (status: TaskStatus) => void;
 }
 
@@ -43,7 +44,7 @@ const priorityBadgeColors: Record<TaskPriority, string> = {
   low: "bg-panel-text-dim/15 text-panel-text-dim",
 };
 
-export default function TaskCard({ task, swarmName, agentName, onDelete, onDragStart, onStatusChange }: TaskCardProps) {
+export default function TaskCard({ task, swarmName, agentName, onDelete, onPickUp, onStatusChange }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const PriorityIcon = priorityIcons[task.priority] ?? Minus;
@@ -61,25 +62,37 @@ export default function TaskCard({ task, swarmName, agentName, onDelete, onDragS
 
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
-      onClick={() => setExpanded(!expanded)}
       className={cn(
         "w-full text-left bg-panel-bg border border-panel-border rounded-md p-3",
-        "hover:border-panel-accent/50 transition-colors duration-150 cursor-grab active:cursor-grabbing",
-        "focus:outline-none focus:ring-1 focus:ring-panel-accent select-none"
+        "hover:border-panel-accent/50 transition-colors duration-150 select-none"
       )}
     >
-      {/* Title row */}
+      {/* Title row — drag handle + title + chevron */}
       <div className="flex items-start gap-2 mb-1.5">
-        <span className="text-xs font-medium text-panel-text flex-1 leading-tight">
-          {task.title}
-        </span>
-        {expanded ? (
-          <ChevronUp size={12} className="text-panel-text-dim shrink-0 mt-0.5" />
-        ) : (
-          <ChevronDown size={12} className="text-panel-text-dim shrink-0 mt-0.5" />
+        {/* Drag handle */}
+        {onPickUp && (
+          <div
+            onMouseDown={(e) => { if (e.button === 0) { e.stopPropagation(); onPickUp(e); } }}
+            className="shrink-0 mt-0.5 cursor-grab active:cursor-grabbing text-panel-text-dim/40 hover:text-panel-text-dim transition-colors"
+            title="Drag to move"
+          >
+            <GripVertical size={12} />
+          </div>
         )}
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-start gap-1 flex-1 text-left focus:outline-none"
+        >
+          <span className="text-xs font-medium text-panel-text flex-1 leading-tight">
+            {task.title}
+          </span>
+          {expanded ? (
+            <ChevronUp size={12} className="text-panel-text-dim shrink-0 mt-0.5" />
+          ) : (
+            <ChevronDown size={12} className="text-panel-text-dim shrink-0 mt-0.5" />
+          )}
+        </button>
       </div>
 
       {/* Description */}

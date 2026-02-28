@@ -85,9 +85,8 @@ pub fn create_swarm(
     Ok(swarm_id)
 }
 
-/// Start a swarm: launch only the coordinator agent, then kick off the
-/// asynchronous breathe loop and coordinator loop.  Member agents are spawned
-/// on-demand by the coordinator when it assigns tasks.
+/// Start a swarm: launch the coordinator and all member agents immediately,
+/// then kick off the breathe loop and coordinator loop.
 pub async fn start_swarm(
     app_handle: AppHandle,
     state: &AppState,
@@ -104,10 +103,20 @@ pub async fn start_swarm(
             .ok_or_else(|| format!("Swarm '{}' not found", swarm_id))?
     };
 
-    // Start the coordinator agent — it will delegate tasks to member agents
+    // Start the coordinator
     if let Some(ref coord_id) = swarm.coordinator_id {
         if let Err(e) = manager::spawn_agent(app_handle.clone(), state, coord_id).await {
             log::error!("Failed to start coordinator {} in swarm: {}", coord_id, e);
+        }
+    }
+
+    // Start all member agents immediately so they are ready to receive tasks.
+    // The coordinator will stop + restart them with task context when it assigns work.
+    let agent_ids: Vec<String> = serde_json::from_str(&swarm.agent_ids)
+        .unwrap_or_default();
+    for agent_id in &agent_ids {
+        if let Err(e) = manager::spawn_agent(app_handle.clone(), state, agent_id).await {
+            log::error!("Failed to start member agent {} in swarm: {}", agent_id, e);
         }
     }
 

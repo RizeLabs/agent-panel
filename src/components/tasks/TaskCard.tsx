@@ -10,7 +10,7 @@ import {
   Layers,
   Trash2,
 } from "lucide-react";
-import type { Task, TaskPriority } from "../../lib/types";
+import type { Task, TaskPriority, TaskStatus } from "../../lib/types";
 import { cn, priorityColor, timeAgo } from "../../lib/utils";
 
 interface TaskCardProps {
@@ -18,7 +18,16 @@ interface TaskCardProps {
   swarmName?: string;
   agentName?: string;
   onDelete?: () => void;
+  onDragStart?: (e: React.DragEvent) => void;
+  onStatusChange?: (status: TaskStatus) => void;
 }
+
+const STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: "Todo",
+  in_progress: "In Progress",
+  done: "Done",
+  blocked: "Blocked",
+};
 
 const priorityIcons: Record<TaskPriority, React.ElementType> = {
   urgent: AlertTriangle,
@@ -34,7 +43,7 @@ const priorityBadgeColors: Record<TaskPriority, string> = {
   low: "bg-panel-text-dim/15 text-panel-text-dim",
 };
 
-export default function TaskCard({ task, swarmName, agentName, onDelete }: TaskCardProps) {
+export default function TaskCard({ task, swarmName, agentName, onDelete, onDragStart, onStatusChange }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const PriorityIcon = priorityIcons[task.priority] ?? Minus;
@@ -46,14 +55,19 @@ export default function TaskCard({ task, swarmName, agentName, onDelete }: TaskC
       ? task.description.slice(0, 80) + "..."
       : task.description;
 
+  const otherStatuses = (["todo", "in_progress", "done", "blocked"] as TaskStatus[]).filter(
+    (s) => s !== task.status
+  );
+
   return (
-    <button
-      type="button"
+    <div
+      draggable
+      onDragStart={onDragStart}
       onClick={() => setExpanded(!expanded)}
       className={cn(
         "w-full text-left bg-panel-bg border border-panel-border rounded-md p-3",
-        "hover:border-panel-accent/50 transition-colors duration-150 cursor-pointer",
-        "focus:outline-none focus:ring-1 focus:ring-panel-accent"
+        "hover:border-panel-accent/50 transition-colors duration-150 cursor-grab active:cursor-grabbing",
+        "focus:outline-none focus:ring-1 focus:ring-panel-accent select-none"
       )}
     >
       {/* Title row */}
@@ -124,6 +138,24 @@ export default function TaskCard({ task, swarmName, agentName, onDelete }: TaskC
               {task.status.replace("_", " ")}
             </span>
           </div>
+
+          {/* Manual status change */}
+          {onStatusChange && (
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <span className="text-[10px] text-panel-text-dim/70">Move to:</span>
+              {otherStatuses.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onStatusChange(s); }}
+                  className="text-[10px] px-2 py-0.5 rounded bg-panel-border/40 hover:bg-panel-accent/20 text-panel-text-dim hover:text-panel-accent transition-colors capitalize"
+                >
+                  {STATUS_LABELS[s]}
+                </button>
+              ))}
+            </div>
+          )}
+
           {onDelete && (
             <button
               type="button"
@@ -136,6 +168,6 @@ export default function TaskCard({ task, swarmName, agentName, onDelete }: TaskC
           )}
         </div>
       )}
-    </button>
+    </div>
   );
 }

@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Loader2, Layout, X, Save } from "lucide-react";
 import type { Agent, Swarm, Task, TaskPriority, TaskStatus } from "../../lib/types";
 import { cn } from "../../lib/utils";
-import { getTasks, createTask, deleteTask, getAgents, getSwarms } from "../../lib/tauri";
+import { getTasks, createTask, deleteTask, updateTask, getAgents, getSwarms } from "../../lib/tauri";
 import { toast } from "sonner";
 import TaskCard from "./TaskCard";
 
@@ -23,6 +23,8 @@ interface TaskBoardProps {
 export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
+  const draggedTaskId = useRef<string | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -58,6 +60,19 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
     },
     onError: (e) => toast.error(`Failed to delete task: ${(e as Error).message}`),
   });
+
+  const updateMutation = useMutation({
+    mutationFn: updateTask,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    },
+    onError: (e) => toast.error(`Failed to update task: ${(e as Error).message}`),
+  });
+
+  const moveTask = (task: Task, newStatus: TaskStatus) => {
+    if (task.status === newStatus) return;
+    updateMutation.mutate({ ...task, status: newStatus });
+  };
 
   const getTasksByStatus = (status: TaskStatus): Task[] => {
     if (!tasks) return [];
@@ -108,12 +123,25 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
         <div className="grid grid-cols-4 gap-3 flex-1 min-h-0">
           {columns.map(({ status, label, color }) => {
             const columnTasks = getTasksByStatus(status);
+            const isDropTarget = dragOverStatus === status;
             return (
               <div
                 key={status}
+                onDragOver={(e) => { e.preventDefault(); setDragOverStatus(status); }}
+                onDragLeave={() => setDragOverStatus(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverStatus(null);
+                  const id = draggedTaskId.current;
+                  if (!id || !tasks) return;
+                  const task = tasks.find((t: Task) => t.id === id);
+                  if (task) moveTask(task, status);
+                  draggedTaskId.current = null;
+                }}
                 className={cn(
-                  "flex flex-col bg-panel-surface/50 border border-panel-border rounded-lg overflow-hidden border-t-2",
-                  color
+                  "flex flex-col bg-panel-surface/50 border border-panel-border rounded-lg overflow-hidden border-t-2 transition-colors duration-100",
+                  color,
+                  isDropTarget && "bg-panel-accent/5 border-panel-accent/40"
                 )}
               >
                 {/* Column Header */}
@@ -125,7 +153,10 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
                 </div>
 
                 {/* Cards */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                <div className={cn(
+                  "flex-1 overflow-y-auto p-2 space-y-2",
+                  isDropTarget && "ring-1 ring-inset ring-panel-accent/30 rounded-b-lg"
+                )}>
                   {columnTasks.length > 0 ? (
                     columnTasks.map((task) => (
                       <TaskCard
@@ -134,11 +165,19 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
                         swarmName={task.swarm_id ? swarmMap[task.swarm_id] : undefined}
                         agentName={task.assigned_agent ? agentMap[task.assigned_agent] : undefined}
                         onDelete={() => deleteMutation.mutate(task.id)}
+                        onDragStart={(e) => {
+                          draggedTaskId.current = task.id;
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onStatusChange={(newStatus) => moveTask(task, newStatus)}
                       />
                     ))
                   ) : (
-                    <p className="text-[10px] text-panel-text-dim text-center py-4 italic">
-                      No tasks
+                    <p className={cn(
+                      "text-[10px] text-panel-text-dim text-center py-4 italic",
+                      isDropTarget && "text-panel-accent/60"
+                    )}>
+                      {isDropTarget ? "Drop here" : "No tasks"}
                     </p>
                   )}
                 </div>

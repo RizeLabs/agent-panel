@@ -203,16 +203,26 @@ pub async fn spawn_agent(
         let mut lines = reader.lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
+            // Reset silence timer for ANY stdout line — not just parsed events.
+            // If Claude outputs auth prompts, setup wizards, or any non-JSON content
+            // we still know the process is alive and producing output.
+            {
+                let state_iw = handle_clone.state::<AppState>();
+                let mut waits = state_iw.input_wait.lock().unwrap();
+                if let Some(info) = waits.get_mut(&agent_id_owned) {
+                    info.last_output_at = Instant::now();
+                    info.notification_sent = false;
+                }
+            }
+
             if let Some(event) = output_parser::parse_stream_line(&line) {
                 handle_stream_event(&handle_clone, &agent_id_owned, &event);
 
-                // Update input-wait tracker: new output arrived, reset timer
+                // Update last_output_text and might_need_input for parsed events
                 {
                     let state_iw = handle_clone.state::<AppState>();
                     let mut waits = state_iw.input_wait.lock().unwrap();
                     if let Some(info) = waits.get_mut(&agent_id_owned) {
-                        info.last_output_at = Instant::now();
-                        info.notification_sent = false;
                         match &event {
                             StreamEvent::AssistantText { text } => {
                                 info.last_output_text = text.clone();
@@ -230,6 +240,10 @@ pub async fn spawn_agent(
                         }
                     }
                 }
+            } else if !line.trim().is_empty() {
+                // Log non-JSON stdout for diagnosis (auth prompts, setup wizards, etc.)
+                let preview: String = line.chars().take(300).collect();
+                log::warn!("[agent {} stdout] {}", agent_id_owned, preview);
             }
         }
 

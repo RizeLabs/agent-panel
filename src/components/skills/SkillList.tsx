@@ -63,7 +63,7 @@ export default function SkillList({ onSelect, onCreate }: SkillListProps) {
       setImportValue("");
       setShowImport(false);
     } catch (err) {
-      toast.error(`Import failed: ${(err as Error).message}`);
+      toast.error(`Import failed: ${err}`);
     } finally {
       setImporting(false);
     }

@@ -166,7 +166,7 @@ function AgentLogPanel({
       await sendAgentInput(agentId, text);
       setInputText("");
     } catch (err) {
-      toast.error(`Failed to send input: ${(err as Error).message}`);
+      toast.error(`Failed to send input: ${err}`);
     } finally {
       setSending(false);
     }

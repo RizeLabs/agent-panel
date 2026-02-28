@@ -3,7 +3,7 @@ import { useAgentLogs } from "../../hooks/useAgents";
 import { onAgentLog } from "../../lib/tauri";
 import { formatDate, cn } from "../../lib/utils";
 import type { AgentLog as AgentLogEntry, LogType } from "../../lib/types";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Lightbulb, Play } from "lucide-react";
 
 interface AgentLogProps {
   agentId: string;
@@ -74,6 +74,171 @@ function ToolUseEntry({ content }: { content: string }) {
           {pretty}
         </pre>
       )}
+    </div>
+  );
+}
+
+// ─── Coordinator JSON Output ──────────────────────────────────
+
+interface CoordinatorOutput {
+  insights?: string[];
+  task_assignments?: Array<{ task_id: string; agent_id: string; instructions: string }>;
+  task_completions?: string[];
+  task_rejections?: Array<{ task_id: string; agent_id: string; feedback: string }>;
+  human_queries?: string[];
+  new_tasks?: Array<{ title: string; description?: string; priority?: string }>;
+}
+
+function CoordinatorOutputEntry({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  let output: CoordinatorOutput = {};
+  try {
+    output = JSON.parse(content);
+  } catch {
+    return <span className="text-panel-text/90 whitespace-pre-wrap">{content}</span>;
+  }
+
+  const hasInsights = output.insights?.length ?? 0 > 0;
+  const hasAssignments = output.task_assignments?.length ?? 0 > 0;
+  const hasCompletions = output.task_completions?.length ?? 0 > 0;
+  const hasRejections = output.task_rejections?.length ?? 0 > 0;
+  const hasQueries = output.human_queries?.length ?? 0 > 0;
+  const hasNewTasks = output.new_tasks?.length ?? 0 > 0;
+
+  return (
+    <div className="space-y-1.5 w-full">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-xs font-medium text-cyan-300 hover:text-cyan-200"
+      >
+        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        Coordinator Decision
+        {!expanded && (
+          <span className="text-[10px] text-panel-text-dim ml-1">
+            {[
+              hasCompletions && `${output.task_completions?.length} completed`,
+              hasRejections && `${output.task_rejections?.length} rejected`,
+              hasAssignments && `${output.task_assignments?.length} assigned`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="pl-3 border-l border-cyan-400/30 space-y-1.5">
+          {hasInsights && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-300">
+                <Lightbulb size={9} />
+                Insights
+              </div>
+              {output.insights?.map((insight, i) => (
+                <p key={i} className="text-[10px] text-panel-text/80 leading-relaxed pl-4">
+                  • {insight}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {hasCompletions && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-green-400">
+                <CheckCircle2 size={9} />
+                Task Completions
+              </div>
+              <div className="pl-4 space-y-0.5">
+                {output.task_completions?.map((id, i) => (
+                  <code key={i} className="text-[9px] text-green-300">
+                    ✓ {id.slice(0, 8)}…
+                  </code>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {hasRejections && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-400">
+                <AlertCircle size={9} />
+                Task Rejections
+              </div>
+              {output.task_rejections?.map((rej, i) => (
+                <div key={i} className="pl-4 border-l border-amber-400/30 space-y-0.5">
+                  <code className="text-[9px] text-amber-300">Task {rej.task_id.slice(0, 8)}…</code>
+                  <p className="text-[9px] text-panel-text/70 leading-relaxed">{rej.feedback}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {hasAssignments && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-300">
+                <Play size={9} />
+                Task Assignments
+              </div>
+              {output.task_assignments?.map((assign, i) => (
+                <div key={i} className="pl-4 space-y-0.5">
+                  <code className="text-[9px] text-blue-300">→ {assign.task_id.slice(0, 8)}…</code>
+                  <p className="text-[9px] text-panel-text/70 leading-relaxed">{assign.instructions}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {hasQueries && (
+            <div className="space-y-1">
+              <div className="text-[10px] font-semibold text-orange-300">❓ Human Queries</div>
+              {output.human_queries?.map((query, i) => (
+                <p key={i} className="text-[10px] text-panel-text/80 leading-relaxed pl-4">
+                  → {query}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {hasNewTasks && (
+            <div className="space-y-1">
+              <div className="text-[10px] font-semibold text-purple-300">🆕 New Tasks</div>
+              {output.new_tasks?.map((task, i) => (
+                <div key={i} className="pl-4 space-y-0.5">
+                  <p className="text-[10px] text-purple-300 font-medium">{task.title}</p>
+                  {task.description && (
+                    <p className="text-[9px] text-panel-text-dim">{task.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Result Entry ────────────────────────────────────────────
+
+function ResultEntry({ content }: { content: string }) {
+  const m = content.match(/cost=\$([0-9.]+), session=([^,]+), duration=(\d+)ms/);
+  const cost = m?.[1] ?? "0.0000";
+  const session = m?.[2] ?? "none";
+  const duration = m?.[3] ?? "0";
+
+  const durationSec = Math.round(parseInt(duration) / 1000);
+
+  return (
+    <div className="flex items-center gap-3 text-[10px]">
+      <div className="px-2 py-1 bg-emerald-400/15 text-emerald-300 rounded font-mono">
+        ${cost}
+      </div>
+      <div className="px-2 py-1 bg-cyan-400/15 text-cyan-300 rounded font-mono">
+        {durationSec}s
+      </div>
+      <div className="px-2 py-1 bg-panel-border/50 text-panel-text-dim rounded font-mono truncate max-w-[150px]">
+        {session.slice(0, 12)}…
+      </div>
     </div>
   );
 }
@@ -168,6 +333,10 @@ export default function AgentLog({ agentId }: AgentLogProps) {
               {/* Content */}
               {log.log_type === "tool_use" ? (
                 <ToolUseEntry content={log.content} />
+              ) : log.log_type === "assistant" && log.content.trim().startsWith("{") ? (
+                <CoordinatorOutputEntry content={log.content} />
+              ) : log.log_type === "result" ? (
+                <ResultEntry content={log.content} />
               ) : (
                 <span
                   className={cn(

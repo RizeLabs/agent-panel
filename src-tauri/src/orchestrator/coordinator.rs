@@ -9,7 +9,9 @@ use crate::state::{AgentAssignment, AppState};
 const DEFAULT_COORDINATOR_INTERVAL_SECS: u64 = 20;
 
 /// How long to wait for the coordinator to produce output after spawning (seconds).
-const COORDINATOR_OUTPUT_WAIT_SECS: u64 = 15;
+/// The coordinator only needs to produce one JSON response, but API latency can
+/// be 30–90 s, so we give it a generous window.
+const COORDINATOR_OUTPUT_WAIT_SECS: u64 = 90;
 
 // ─── Coordinator System Prompt ────────────────────────────────
 
@@ -24,7 +26,9 @@ Your responsibilities:
 4. ESCALATE — If a decision requires human judgment, add a concise question to human_queries.
 5. CREATE — Add new sub-tasks to new_tasks if you identify work needed to achieve the goal.
 
-Respond with ONLY a valid JSON object — no prose, no markdown fences:
+YOUR RESPONSE MUST BE A SINGLE RAW JSON OBJECT. DO NOT write any prose, explanation, or markdown. The VERY FIRST character of your response must be `{` and the VERY LAST must be `}`. No text before or after the JSON.
+
+Output schema:
 {
   "insights": ["key observations about progress"],
   "task_assignments": [
@@ -40,9 +44,12 @@ Respond with ONLY a valid JSON object — no prose, no markdown fences:
   ]
 }
 
-Only assign tasks that have status "todo".
-Only complete a task when you have reviewed its completion report and are satisfied.
-Return {} if there is nothing to do right now."#;
+Rules:
+- Only assign tasks with status "todo".
+- Only complete a task after reviewing its completion report and being satisfied.
+- Use human_queries ONLY for decisions that genuinely require human judgment.
+- Output {} if there is nothing to do right now.
+- NEVER output anything except the JSON object."#;
 
 fn coordinator_system_prompt(goal: Option<&str>) -> String {
     match goal {
@@ -111,7 +118,7 @@ pub fn create_coordinator_agent(
         system_prompt: Some(coordinator_system_prompt(goal)),
         working_directory: None,
         model: "sonnet".to_string(),
-        max_turns: 10,
+        max_turns: 1, // coordinator only needs one response turn — pure JSON output, no tool use
         skills: "[]".to_string(),
         env_vars: "{}".to_string(),
         status: "idle".to_string(),

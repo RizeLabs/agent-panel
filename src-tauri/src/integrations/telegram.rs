@@ -265,7 +265,7 @@ pub async fn start_bot(
 
                                 // Send Telegram confirmation
                                 let confirm_msg =
-                                    format!("Sent to agent `{}`", agent_name);
+                                    format!("✅ Sent to agent <code>{}</code>", escape_html(&agent_name));
                                 let _ = send_telegram_message(
                                     &bot_token_inner,
                                     &chat_id_inner,
@@ -280,19 +280,50 @@ pub async fn start_bot(
                                 );
                             }
                             Err(e) => {
+                                // stdin delivery failed (e.g. fresh-session agent has no open
+                                // stdin pipe). Fall back: post as a message bus entry addressed
+                                // directly to this agent so it picks it up on its next cycle.
                                 log::warn!(
-                                    "Failed to route Telegram reply to agent {}: {}",
-                                    agent_id,
-                                    e
+                                    "stdin delivery failed for agent {}: {} — falling back to message bus",
+                                    agent_id, e
+                                );
+                                {
+                                    let st = handle.state::<AppState>();
+                                    let db_result = st.db.lock();
+                                    if let Ok(db) = db_result {
+                                        let _ = queries::insert_message(
+                                            &db,
+                                            "user",
+                                            Some(&agent_id),
+                                            "chat",
+                                            &input,
+                                            Some("{\"source\":\"telegram\"}"),
+                                        );
+                                    };
+                                }
+                                let confirm = format!(
+                                    "✅ Message queued for <code>{}</code>. It will pick it up on its next cycle.",
+                                    escape_html(&agent_name)
                                 );
                                 let _ = send_telegram_message(
                                     &bot_token_inner,
                                     &chat_id_inner,
-                                    &format!("Failed to send to agent: {}", e),
+                                    &confirm,
                                 )
                                 .await;
                             }
                         }
+                    } else {
+                        // No live waiting agent found — the message was already posted
+                        // to the shared message bus above. The coordinator (or any agent)
+                        // will pick it up on its next cycle. Let the user know.
+                        log::info!("Telegram: no live waiting agent — message broadcast to feed");
+                        let _ = send_telegram_message(
+                            &bot_token_inner,
+                            &chat_id_inner,
+                            "✅ Message posted to the shared feed. The coordinator will pick it up on its next cycle (within ~20s).",
+                        )
+                        .await;
                     }
 
                     Ok(())

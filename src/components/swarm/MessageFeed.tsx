@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { MessageSquare, Send, Loader2 } from "lucide-react";
+import { MessageSquare, Send, Loader2, ChevronRight, ChevronDown, Terminal } from "lucide-react";
 import type { Message, MessageType } from "../../lib/types";
 import { cn, timeAgo } from "../../lib/utils";
 import { useMessages, usePostMessage } from "../../hooks/useMessages";
@@ -19,7 +19,123 @@ const typeBadgeColors: Record<string, string> = {
   finding: "bg-cyan-500/15 text-cyan-400",
   request: "bg-panel-accent/15 text-panel-accent",
   response: "bg-gray-500/15 text-gray-400",
+  completion_report: "bg-purple-500/15 text-purple-400",
+  chat: "bg-gray-500/15 text-gray-400",
+  cron_trigger: "bg-orange-500/15 text-orange-400",
 };
+
+// ─── Tool call chip ──────────────────────────────────────────
+
+function ToolCallChip({ name, input }: { name: string; input: string }) {
+  const [open, setOpen] = useState(false);
+  let pretty = input;
+  try {
+    pretty = JSON.stringify(JSON.parse(input), null, 2);
+  } catch {}
+
+  return (
+    <div className="rounded border border-panel-border/50 bg-panel-bg/40 text-[10px]">
+      <button
+        className="flex items-center gap-1.5 w-full px-2 py-1 text-left hover:bg-panel-surface/40"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? (
+          <ChevronDown size={9} className="text-purple-400 shrink-0" />
+        ) : (
+          <ChevronRight size={9} className="text-purple-400 shrink-0" />
+        )}
+        <Terminal size={9} className="text-purple-400 shrink-0" />
+        <span className="font-semibold text-purple-300">{name}</span>
+        {!open && (
+          <span className="text-panel-text-dim truncate max-w-[220px]">
+            {input.slice(0, 80)}{input.length > 80 ? "…" : ""}
+          </span>
+        )}
+      </button>
+      {open && (
+        <pre className="px-3 pb-2 text-[9px] text-panel-text-dim overflow-x-auto leading-relaxed">
+          {pretty}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ─── Completion report renderer ──────────────────────────────
+
+function CompletionReportContent({ content }: { content: string }) {
+  const [workExpanded, setWorkExpanded] = useState(false);
+
+  const lines = content.split("\n");
+  let agentId = "";
+  let taskId = "";
+  let workOutputStart = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("Agent: ")) agentId = lines[i].slice("Agent: ".length);
+    if (lines[i].startsWith("Task ID: ")) taskId = lines[i].slice("Task ID: ".length);
+    if (lines[i].startsWith("Work output:")) { workOutputStart = i + 1; break; }
+  }
+
+  const workText = workOutputStart >= 0 ? lines.slice(workOutputStart).join("\n") : content;
+
+  type Segment =
+    | { type: "tool"; name: string; input: string }
+    | { type: "prose"; text: string };
+
+  const segments: Segment[] = [];
+  for (const line of workText.split("\n")) {
+    const m = line.match(/^\[Tool: ([^\]]+)\] (.*)/s);
+    if (m) {
+      segments.push({ type: "tool", name: m[1], input: m[2] });
+    } else if (line.trim()) {
+      segments.push({ type: "prose", text: line });
+    }
+  }
+
+  const toolCount = segments.filter((s) => s.type === "tool").length;
+
+  return (
+    <div className="space-y-2">
+      {/* Header */}
+      <div className="text-[10px] text-panel-text-dim space-y-0.5 pb-2 border-b border-panel-border/50">
+        {agentId && (
+          <div>
+            Agent: <code className="text-panel-text">{agentId.slice(0, 8)}…</code>
+          </div>
+        )}
+        {taskId && (
+          <div>
+            Task: <code className="text-panel-text">{taskId.slice(0, 8)}…</code>
+          </div>
+        )}
+      </div>
+
+      {/* Work output toggle */}
+      <button
+        onClick={() => setWorkExpanded((o) => !o)}
+        className="flex items-center gap-1.5 text-[10px] text-panel-accent hover:text-panel-accent/80 transition-colors"
+      >
+        {workExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+        Work output · {toolCount} tool call{toolCount !== 1 ? "s" : ""}
+      </button>
+
+      {workExpanded && (
+        <div className="space-y-1 pl-2 border-l border-panel-border/40">
+          {segments.map((seg, i) =>
+            seg.type === "tool" ? (
+              <ToolCallChip key={i} name={seg.name} input={seg.input} />
+            ) : (
+              <p key={i} className="text-[10px] text-panel-text/80 leading-relaxed">
+                {seg.text}
+              </p>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MessageFeed() {
   const { data: messages, isLoading } = useMessages();
@@ -152,7 +268,11 @@ function MessageBubble({ message }: { message: Message }) {
             : "bg-panel-surface border border-panel-border"
         )}
       >
-        {message.content}
+        {message.message_type === "completion_report" ? (
+          <CompletionReportContent content={message.content} />
+        ) : (
+          <span className="whitespace-pre-wrap">{message.content}</span>
+        )}
       </div>
 
       {/* Timestamp + recipient */}

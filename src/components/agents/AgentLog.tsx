@@ -3,6 +3,7 @@ import { useAgentLogs } from "../../hooks/useAgents";
 import { onAgentLog } from "../../lib/tauri";
 import { formatDate, cn } from "../../lib/utils";
 import type { AgentLog as AgentLogEntry, LogType } from "../../lib/types";
+import { ChevronRight, ChevronDown } from "lucide-react";
 
 interface AgentLogProps {
   agentId: string;
@@ -36,6 +37,45 @@ function logTypeBadge(logType: LogType): string {
     user_input: "INPUT",
   };
   return map[logType] ?? logType.toUpperCase();
+}
+
+function ToolUseEntry({ content }: { content: string }) {
+  const [open, setOpen] = useState(false);
+  // Format: [toolName] {...json...}
+  const m = content.match(/^\[([^\]]+)\] (.*)/s);
+  const name = m?.[1] ?? "tool";
+  const input = m?.[2] ?? content;
+
+  let pretty = input;
+  try {
+    pretty = JSON.stringify(JSON.parse(input), null, 2);
+  } catch {}
+
+  return (
+    <div className="leading-5 w-full">
+      <button
+        className="flex items-center gap-1.5 text-purple-300 hover:text-purple-200 w-full text-left"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? (
+          <ChevronDown size={9} className="shrink-0" />
+        ) : (
+          <ChevronRight size={9} className="shrink-0" />
+        )}
+        <span className="font-semibold text-purple-400">[{name}]</span>
+        {!open && (
+          <span className="text-panel-text-dim truncate">
+            {input.slice(0, 100)}{input.length > 100 ? "…" : ""}
+          </span>
+        )}
+      </button>
+      {open && (
+        <pre className="mt-0.5 pl-4 text-[9px] text-panel-text-dim overflow-x-auto leading-relaxed">
+          {pretty}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 export default function AgentLog({ agentId }: AgentLogProps) {
@@ -126,18 +166,20 @@ export default function AgentLog({ agentId }: AgentLogProps) {
               </span>
 
               {/* Content */}
-              <span
-                className={cn(
-                  "whitespace-pre-wrap break-all leading-5",
-                  log.log_type === "stderr" || log.log_type === "error"
-                    ? "text-panel-error/90"
-                    : log.log_type === "tool_use"
-                      ? "text-purple-300"
+              {log.log_type === "tool_use" ? (
+                <ToolUseEntry content={log.content} />
+              ) : (
+                <span
+                  className={cn(
+                    "whitespace-pre-wrap break-all leading-5",
+                    log.log_type === "stderr" || log.log_type === "error"
+                      ? "text-panel-error/90"
                       : "text-panel-text/90"
-                )}
-              >
-                {log.content}
-              </span>
+                  )}
+                >
+                  {log.content}
+                </span>
+              )}
             </div>
           ))}
         </div>

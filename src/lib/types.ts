@@ -51,6 +51,8 @@ export type MessageType =
   | "finding"
   | "request"
   | "response"
+  | "completion_report" // agent → coordinator: task work summary
+  | "chat" // user → feed (e.g. via Telegram)
   | "schedule_request" // agent → scheduler: register a recurring job
   | "cron_trigger"; // scheduler → agent: job fired
 

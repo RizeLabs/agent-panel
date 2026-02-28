@@ -94,6 +94,8 @@ pub async fn spawn_agent(
 
     cmd.arg("--output-format")
         .arg("stream-json")
+        .arg("--verbose")
+        .arg("--dangerously-skip-permissions")
         .arg("--model")
         .arg(&agent.model)
         .arg("--max-turns")
@@ -122,7 +124,19 @@ pub async fn spawn_agent(
         .map_err(|e| format!("Failed to spawn claude process: {}", e))?;
 
     let pid = child.id().map(|p| p as i64);
-    let stdin = child.stdin.take();
+
+    // Fresh sessions use `-p` (non-interactive print mode). The claude CLI may
+    // wait for stdin EOF before starting to process the prompt, so we drop stdin
+    // immediately. Resumed sessions keep stdin open so the breathe loop can
+    // inject context via send_agent_input.
+    let is_resumed = agent.session_id.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+    let stdin = if is_resumed {
+        child.stdin.take()
+    } else {
+        let _ = child.stdin.take(); // drops immediately → EOF → claude starts processing
+        None
+    };
+
     let stdout = child
         .stdout
         .take()
@@ -544,7 +558,10 @@ pub async fn send_agent_input(
         handle
             .stdin
             .take()
-            .ok_or_else(|| format!("No stdin handle for agent: {}", agent_id))?
+            .ok_or_else(|| format!(
+                "Agent {} has no stdin (fresh sessions use -p mode; input is only supported after the first session completes and the agent is resumed)",
+                agent_id
+            ))?
     }; // MutexGuard is dropped here
 
     let data = format!("{}\n", input);

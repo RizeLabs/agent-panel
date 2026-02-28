@@ -127,12 +127,17 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
             return (
               <div
                 key={status}
-                onDragOver={(e) => { e.preventDefault(); setDragOverStatus(status); }}
-                onDragLeave={() => setDragOverStatus(null)}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverStatus(status); }}
+                onDragLeave={(e) => {
+                  // Only clear if leaving to outside the column, not to a child element
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setDragOverStatus(null);
+                  }
+                }}
                 onDrop={(e) => {
                   e.preventDefault();
                   setDragOverStatus(null);
-                  const id = draggedTaskId.current;
+                  const id = e.dataTransfer.getData("text/plain") || draggedTaskId.current;
                   if (!id || !tasks) return;
                   const task = tasks.find((t: Task) => t.id === id);
                   if (task) moveTask(task, status);
@@ -167,6 +172,7 @@ export default function TaskBoard({ onSyncStatusChange: _ }: TaskBoardProps) {
                         onDelete={() => deleteMutation.mutate(task.id)}
                         onDragStart={(e) => {
                           draggedTaskId.current = task.id;
+                          e.dataTransfer.setData("text/plain", task.id);
                           e.dataTransfer.effectAllowed = "move";
                         }}
                         onStatusChange={(newStatus) => moveTask(task, newStatus)}

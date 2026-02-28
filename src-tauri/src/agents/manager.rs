@@ -181,15 +181,33 @@ pub async fn spawn_agent(
 
     // ── 7a. Drain stderr to avoid blocking the child process ─────
     // If stderr is piped but never read, the OS pipe buffer fills up and the
-    // child blocks — producing zero stdout output. We drain it here and log any
-    // content at warn level so errors are visible without blocking the agent.
+    // child blocks — producing zero stdout output. We drain it here, surface
+    // non-empty stderr lines to the frontend as error-typed agent-log events,
+    // and persist them so the user can see what went wrong (auth errors, etc.).
     let stderr_agent_id = agent_id.to_string();
+    let handle_err = app_handle.clone();
     tokio::spawn(async move {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            if !line.trim().is_empty() {
-                log::warn!("[agent stderr {}] {}", stderr_agent_id, line);
+            let trimmed = line.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            log::warn!("[agent stderr {}] {}", stderr_agent_id, trimmed);
+            let content = format!("[stderr] {}", trimmed);
+            let _ = handle_err.emit(
+                "agent-log",
+                AgentLogPayload {
+                    agent_id: stderr_agent_id.clone(),
+                    log_type: "error".to_string(),
+                    content: content.clone(),
+                },
+            );
+            let state_err = handle_err.state::<AppState>();
+            let db_lock = state_err.db.lock();
+            if let Ok(db) = db_lock {
+                let _ = queries::insert_log(&db, &stderr_agent_id, "error", &content);
             }
         }
     });

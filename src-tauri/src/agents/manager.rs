@@ -444,15 +444,20 @@ If it shows an error, skip GitHub steps and post a finding: \
 `curl -s -X POST $MC_API_URL/message -H 'Content-Type: application/json' \
 -d '{\"agent_id\":\"'$MC_AGENT_ID'\",\"message_type\":\"finding\",\"content\":\"gh CLI not authenticated — skipping GitHub workflow\"}'`\n\
 \n\
-1. **Create a repo before writing any code** (use --yes to skip confirmation):\n\
+1. **Create a repo before writing any code — but only if one doesn't exist yet:**\n\
    ```\n\
-   gh repo create <short-descriptive-name> --private --clone --yes\n\
-   cd <short-descriptive-name>\n\
-   git config user.email \"agent@mission-control\" && git config user.name \"Agent\"\n\
+   # Check if already inside a git repo with a remote\n\
+   if git rev-parse --is-inside-work-tree 2>/dev/null && git remote get-url origin 2>/dev/null; then\n\
+     echo \"Repo already exists, skipping creation\"\n\
+   else\n\
+     gh repo create <short-descriptive-name> --private --clone --yes\n\
+     cd <short-descriptive-name>\n\
+     git config user.email \"agent@mission-control\" && git config user.name \"Agent\"\n\
+   fi\n\
    ```\n\
    Pick a name that reflects the task (e.g. `arena-blaster-game`, `market-research-2p`).\n\
 \n\
-2. **Make an initial commit right after setup:**\n\
+2. **Make an initial commit right after setup (only if the repo is brand new):**\n\
    ```\n\
    git add . && git commit -m \"chore: initial project setup\" && git push origin main\n\
    ```\n\

@@ -114,6 +114,15 @@ pub async fn spawn_agent(
         cmd.env("MC_AGENT_ID", agent_id);
     }
 
+    // Prevent git/gh from hanging on interactive prompts when stdin is closed.
+    // Without these, commands like `git push` or `gh repo create` silently block
+    // waiting for credentials or confirmation — triggering the silence monitor.
+    cmd.env("GIT_TERMINAL_PROMPT", "0");       // git: fail immediately instead of prompting
+    cmd.env("GH_PROMPT_DISABLED", "1");        // gh CLI: disable all interactive prompts
+    cmd.env("GIT_ASKPASS", "echo");            // git credential helper: return empty string
+    cmd.env("SSH_ASKPASS", "echo");            // SSH: return empty passphrase
+    cmd.env("SSH_ASKPASS_REQUIRE", "never");   // SSH: never show passphrase prompt
+
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -424,18 +433,28 @@ Use these tools frequently to share progress, discoveries, and questions with ot
     if agent.role != "coordinator" {
         let github_docs = "\n\n\
 ## GitHub Workflow (mandatory for all tasks)\n\
-You MUST use GitHub to track your work. Follow these steps for every task:\n\
+You MUST use GitHub to track your work. IMPORTANT: never run interactive commands — \
+all git/gh commands must be fully non-interactive (stdin is closed).\n\
 \n\
-1. **Create a repo before writing any code:**\n\
+**Before starting, verify gh is authenticated:**\n\
+```\n\
+gh auth status\n\
+```\n\
+If it shows an error, skip GitHub steps and post a finding: \
+`curl -s -X POST $MC_API_URL/message -H 'Content-Type: application/json' \
+-d '{\"agent_id\":\"'$MC_AGENT_ID'\",\"message_type\":\"finding\",\"content\":\"gh CLI not authenticated — skipping GitHub workflow\"}'`\n\
+\n\
+1. **Create a repo before writing any code** (use --yes to skip confirmation):\n\
    ```\n\
-   gh repo create <short-descriptive-name> --private --clone\n\
+   gh repo create <short-descriptive-name> --private --clone --yes\n\
    cd <short-descriptive-name>\n\
+   git config user.email \"agent@mission-control\" && git config user.name \"Agent\"\n\
    ```\n\
    Pick a name that reflects the task (e.g. `arena-blaster-game`, `market-research-2p`).\n\
 \n\
 2. **Make an initial commit right after setup:**\n\
    ```\n\
-   git add . && git commit -m \"chore: initial project setup\" && git push\n\
+   git add . && git commit -m \"chore: initial project setup\" && git push origin main\n\
    ```\n\
 \n\
 3. **Commit after each logical unit of work** — one feature, fix, or doc change per commit:\n\
@@ -445,11 +464,11 @@ You MUST use GitHub to track your work. Follow these steps for every task:\n\
    git push origin main\n\
    ```\n\
    Good prefixes: `feat:` `fix:` `docs:` `refactor:` `test:` `chore:`\n\
-   Never commit everything at once with a vague message like \"updates\" or \"wip\".\n\
+   Never commit everything at once with a vague message.\n\
 \n\
 4. **Push after every commit** so progress is always visible.\n\
 \n\
-5. **When the task is complete**, post the repo URL to the shared knowledge base:\n\
+5. **When the task is complete**, post the repo URL:\n\
    ```\n\
    curl -s -X POST $MC_API_URL/knowledge \\\n\
      -H 'Content-Type: application/json' \\\n\

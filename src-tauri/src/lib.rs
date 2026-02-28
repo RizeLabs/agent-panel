@@ -73,6 +73,26 @@ pub fn run() {
             commands::cron_commands::trigger_cron_job,
         ])
         .setup(|app| {
+            // Reset any agents/swarms left in "running" state from a previous session.
+            // The in-memory process registry is empty on every startup, so stale DB
+            // status would cause spawn_agent to think agents are already running.
+            {
+                let state = app.state::<AppState>();
+                let reset_result = state.db.lock().map(|conn| {
+                    conn.execute_batch(
+                        "UPDATE agents SET status = 'stopped', pid = NULL \
+                         WHERE status = 'running'; \
+                         UPDATE swarms SET status = 'stopped' \
+                         WHERE status = 'running';",
+                    )
+                });
+                match reset_result {
+                    Ok(Ok(())) => log::info!("Reset stale running state from previous session"),
+                    Ok(Err(e)) => log::warn!("Failed to reset stale running state: {}", e),
+                    Err(_) => log::warn!("DB lock failed during startup reset"),
+                }
+            }
+
             let handle = app.handle().clone();
             // Spawn background task for agent health monitoring
             tauri::async_runtime::spawn(async move {

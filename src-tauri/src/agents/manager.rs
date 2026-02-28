@@ -55,9 +55,17 @@ pub async fn spawn_agent(
             .ok_or_else(|| format!("Agent not found: {}", agent_id))?
     };
 
-    // Prevent double-start
-    if agent.status == "running" {
-        return Err(format!("Agent {} is already running", agent_id));
+    // Prevent double-start: check the live process registry, not the DB status.
+    // DB status can be stale after an app restart — processes are in-memory only,
+    // so "running" in the DB after a restart just means it was running before the crash.
+    {
+        let procs = state
+            .processes
+            .lock()
+            .map_err(|e| format!("Process registry lock error: {}", e))?;
+        if procs.contains_key(agent_id) {
+            return Err(format!("Agent {} is already running", agent_id));
+        }
     }
 
     // ── 1b. Ensure claude-mem is configured for this agent ──

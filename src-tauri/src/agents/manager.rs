@@ -419,6 +419,45 @@ Use these tools frequently to share progress, discoveries, and questions with ot
         full_prompt.push_str(&api_docs);
     }
 
+    // Append GitHub workflow instructions for non-coordinator agents.
+    // Coordinators output JSON only and never run shell commands.
+    if agent.role != "coordinator" {
+        let github_docs = "\n\n\
+## GitHub Workflow (mandatory for all tasks)\n\
+You MUST use GitHub to track your work. Follow these steps for every task:\n\
+\n\
+1. **Create a repo before writing any code:**\n\
+   ```\n\
+   gh repo create <short-descriptive-name> --private --clone\n\
+   cd <short-descriptive-name>\n\
+   ```\n\
+   Pick a name that reflects the task (e.g. `arena-blaster-game`, `market-research-2p`).\n\
+\n\
+2. **Make an initial commit right after setup:**\n\
+   ```\n\
+   git add . && git commit -m \"chore: initial project setup\" && git push\n\
+   ```\n\
+\n\
+3. **Commit after each logical unit of work** — one feature, fix, or doc change per commit:\n\
+   ```\n\
+   git add <changed-files>\n\
+   git commit -m \"feat: add player movement system\"\n\
+   git push origin main\n\
+   ```\n\
+   Good prefixes: `feat:` `fix:` `docs:` `refactor:` `test:` `chore:`\n\
+   Never commit everything at once with a vague message like \"updates\" or \"wip\".\n\
+\n\
+4. **Push after every commit** so progress is always visible.\n\
+\n\
+5. **When the task is complete**, post the repo URL to the shared knowledge base:\n\
+   ```\n\
+   curl -s -X POST $MC_API_URL/knowledge \\\n\
+     -H 'Content-Type: application/json' \\\n\
+     -d '{\"agent_id\":\"'$MC_AGENT_ID'\",\"category\":\"research\",\"title\":\"GitHub Repo\",\"content\":\"<repo-url>\"}'\n\
+   ```";
+        full_prompt.push_str(github_docs);
+    }
+
     if full_prompt.is_empty() {
         return;
     }

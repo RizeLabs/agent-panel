@@ -119,6 +119,10 @@ pub async fn spawn_agent(
         .stdout
         .take()
         .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
     // ── 4. Persist PID + status in DB ────────────────────────
     {
@@ -175,7 +179,22 @@ pub async fn spawn_agent(
 
     log::info!("Agent {} spawned with PID {:?}", agent_id, pid);
 
-    // ── 7. Spawn stdout reader task ──────────────────────────
+    // ── 7a. Drain stderr to avoid blocking the child process ─────
+    // If stderr is piped but never read, the OS pipe buffer fills up and the
+    // child blocks — producing zero stdout output. We drain it here and log any
+    // content at warn level so errors are visible without blocking the agent.
+    let stderr_agent_id = agent_id.to_string();
+    tokio::spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if !line.trim().is_empty() {
+                log::warn!("[agent stderr {}] {}", stderr_agent_id, line);
+            }
+        }
+    });
+
+    // ── 7b. Spawn stdout reader task ─────────────────────────
     let agent_id_owned = agent_id.to_string();
     let handle_clone = app_handle.clone();
 

@@ -204,13 +204,37 @@ pub async fn coordinator_loop(app_handle: AppHandle, coordinator_id: &str, swarm
             let messages = queries::get_unread_messages_for_agent(&conn, coordinator_id)
                 .unwrap_or_default();
 
-            if messages.is_empty() {
-                // Nothing new — skip this cycle entirely.
+            let tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
+            let agents = queries::get_all_agents(&conn).unwrap_or_default();
+
+            // Check for swarm-level work that needs coordinator attention even with no messages:
+            // 1. A "todo" task exists in this swarm that could be assigned to an idle agent.
+            // 2. A task is "in_progress" but its assigned agent has stopped/errored — it stalled.
+            let swarm_tasks: Vec<&queries::Task> = tasks
+                .iter()
+                .filter(|t| t.swarm_id.as_deref() == Some(swarm_id))
+                .collect();
+
+            let has_unassigned_todo = swarm_tasks.iter().any(|t| t.status == "todo");
+            let has_stalled = swarm_tasks.iter().any(|t| {
+                t.status == "in_progress"
+                    && t.assigned_agent.as_ref().map_or(false, |aid| {
+                        agents
+                            .iter()
+                            .find(|a| &a.id == aid)
+                            .map_or(false, |a| {
+                                a.status == "stopped"
+                                    || a.status == "idle"
+                                    || a.status == "error"
+                            })
+                    })
+            });
+
+            if messages.is_empty() && !has_unassigned_todo && !has_stalled {
+                // Truly nothing to do this cycle.
                 return Ok(None);
             }
 
-            let tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
-            let agents = queries::get_all_agents(&conn).unwrap_or_default();
             let knowledge = queries::get_knowledge(&conn, None, 20).unwrap_or_default();
 
             // Mark messages read while conn is still in scope

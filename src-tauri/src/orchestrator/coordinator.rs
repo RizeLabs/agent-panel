@@ -26,6 +26,26 @@ Your responsibilities:
 4. ESCALATE — If a decision requires human judgment, add a concise question to human_queries.
 5. CREATE — Add new sub-tasks to new_tasks if you identify work needed to achieve the goal.
 
+=== GITHUB REQUIREMENTS ===
+Every task assignment MUST include these mandatory steps at the start of the instructions:
+
+"Before starting work:
+1. Create a GitHub repo: gh repo create <project-name> --private --clone
+2. cd into the repo directory and do all work inside it.
+3. Make an initial commit immediately after setup: git add . && git commit -m 'chore: initial project setup' && git push
+4. Commit after every logical unit of work — one commit per feature/fix/change:
+   - 'feat: add player movement system'
+   - 'fix: resolve bullet collision detection'
+   - 'docs: add README with setup instructions'
+5. Push after every commit: git push origin main
+6. When done, post the repo URL to the knowledge base:
+   curl -s -X POST $MC_API_URL/knowledge -H 'Content-Type: application/json' \
+     -d '{\"agent_id\":\"'$MC_AGENT_ID'\",\"category\":\"research\",\"title\":\"GitHub Repo\",\"content\":\"<repo-url>\"}'
+"
+
+Choose a descriptive repo name based on the task (e.g., 'arena-blaster-game', 'market-research-2p-games').
+=== END GITHUB REQUIREMENTS ===
+
 YOUR RESPONSE MUST BE A SINGLE RAW JSON OBJECT. DO NOT write any prose, explanation, or markdown. The VERY FIRST character of your response must be `{` and the VERY LAST must be `}`. No text before or after the JSON.
 
 Output schema:
@@ -282,6 +302,15 @@ pub async fn coordinator_loop(app_handle: AppHandle, coordinator_id: &str, swarm
 
         if let Err(e) = process_coordinator_output(&app_handle, coordinator_id, swarm_id).await {
             log::warn!("Coordinator loop: could not process output: {}", e);
+        }
+
+        // ── Auto-stop: all swarm tasks done ───────────────────
+        // If every task belonging to this swarm is "done", stop member agents,
+        // mark the swarm stopped, and notify the human via Telegram.
+        if all_swarm_tasks_done(&state, swarm_id) {
+            log::info!("Coordinator: all tasks done for swarm {} — stopping", swarm_id);
+            stop_swarm_on_completion(&app_handle, swarm_id).await;
+            return; // Exit coordinator loop — swarm is done
         }
 
         tokio::time::sleep(interval).await;
@@ -700,6 +729,101 @@ async fn process_coordinator_output(
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
+
+// ─── Auto-stop Helpers ────────────────────────────────────────
+
+/// Returns true when every task belonging to `swarm_id` is in status "done".
+/// Returns false if there are no tasks yet (swarm hasn't started working).
+fn all_swarm_tasks_done(state: &AppState, swarm_id: &str) -> bool {
+    let conn = match state.db.lock() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let all_tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
+    let swarm_tasks: Vec<_> = all_tasks
+        .iter()
+        .filter(|t| t.swarm_id.as_deref() == Some(swarm_id))
+        .collect();
+
+    !swarm_tasks.is_empty() && swarm_tasks.iter().all(|t| t.status == "done")
+}
+
+/// Stop all member agents, mark the swarm as stopped, and send a Telegram
+/// notification informing the human that the first version is ready to review.
+async fn stop_swarm_on_completion(app_handle: &AppHandle, swarm_id: &str) {
+    let state = app_handle.state::<AppState>();
+
+    // Fetch swarm to get member agent IDs
+    let swarm = {
+        match state.db.lock() {
+            Err(_) => return,
+            Ok(conn) => match queries::get_swarm(&conn, swarm_id) {
+                Ok(Some(s)) => s,
+                _ => return,
+            },
+        }
+    };
+
+    // Stop every member agent
+    let agent_ids: Vec<String> =
+        serde_json::from_str(&swarm.agent_ids).unwrap_or_default();
+    for agent_id in &agent_ids {
+        if let Err(e) = manager::stop_agent(&state, agent_id) {
+            log::warn!("Auto-stop: failed to stop agent {}: {}", agent_id, e);
+        }
+    }
+
+    // Mark swarm stopped
+    if let Ok(conn) = state.db.lock() {
+        let _ = queries::update_swarm_status(&conn, swarm_id, "stopped");
+    }
+
+    log::info!("Auto-stop: swarm {} marked stopped", swarm_id);
+
+    // Collect completed task titles for the notification
+    let task_summary = {
+        match state.db.lock() {
+            Err(_) => String::new(),
+            Ok(conn) => {
+                let tasks = queries::get_tasks(&conn, None, None).unwrap_or_default();
+                tasks
+                    .iter()
+                    .filter(|t| t.swarm_id.as_deref() == Some(swarm_id))
+                    .map(|t| format!("  • {}", t.title))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        }
+    };
+
+    // Send Telegram notification
+    let (bot_token, chat_id) = {
+        match state.db.lock() {
+            Err(_) => (None, None),
+            Ok(conn) => (
+                queries::get_setting(&conn, "telegram_bot_token")
+                    .ok()
+                    .flatten(),
+                queries::get_setting(&conn, "telegram_chat_id")
+                    .ok()
+                    .flatten(),
+            ),
+        }
+    };
+
+    if let (Some(token), Some(chat)) = (bot_token, chat_id) {
+        let msg = format!(
+            "✅ <b>Swarm Complete — First Version Ready!</b>\n\n\
+             All tasks have been completed:\n{}\n\n\
+             <i>The swarm has been stopped. Please review the work and reply with \
+             feedback or new instructions to continue.</i>",
+            if task_summary.is_empty() { "  (no tasks listed)".to_string() } else { task_summary }
+        );
+        if let Err(e) = telegram::send_telegram_message(&token, &chat, &msg).await {
+            log::warn!("Auto-stop: failed to send Telegram notification: {}", e);
+        }
+    }
+}
 
 /// Replace the agent's ephemeral prompt_context with new context.
 /// Never touches system_prompt — prevents unbounded growth.

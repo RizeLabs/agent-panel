@@ -43,14 +43,37 @@ pub fn parse_stream_line(line: &str) -> Option<StreamEvent> {
 
     match event_type {
         "assistant" => {
-            // message.content is an array; collect all text blocks
+            // message.content is an array of text and tool_use content blocks.
+            // Both are captured: text blocks as-is, tool_use blocks as a formatted line.
             let message = obj.get("message")?;
             let content = message.get("content")?.as_array()?;
 
             let mut text_parts: Vec<String> = Vec::new();
             for block in content {
-                if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                    text_parts.push(text.to_string());
+                let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match block_type {
+                    "text" => {
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            text_parts.push(text.to_string());
+                        }
+                    }
+                    "tool_use" => {
+                        let name = block
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("unknown");
+                        let input = block
+                            .get("input")
+                            .map(|i| serde_json::to_string(i).unwrap_or_default())
+                            .unwrap_or_default();
+                        text_parts.push(format!("[Tool: {}] {}", name, input));
+                    }
+                    _ => {
+                        // Fallback: try to extract a text field from unknown block types
+                        if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                            text_parts.push(text.to_string());
+                        }
+                    }
                 }
             }
 
@@ -59,20 +82,21 @@ pub fn parse_stream_line(line: &str) -> Option<StreamEvent> {
             }
 
             Some(StreamEvent::AssistantText {
-                text: text_parts.join(""),
+                text: text_parts.join("\n"),
             })
         }
 
         "tool_use" => {
-            let tool = obj.get("tool")?;
-            let tool_name = tool
+            // Top-level tool_use event: name and input are at the top level of the object,
+            // NOT nested under a "tool" key.
+            let tool_name = obj
                 .get("name")
                 .and_then(|n| n.as_str())
                 .unwrap_or("unknown")
                 .to_string();
 
             // tool_input may be an object or string; serialize it for storage
-            let tool_input = match tool.get("input") {
+            let tool_input = match obj.get("input") {
                 Some(input) => {
                     if let Some(s) = input.as_str() {
                         s.to_string()
@@ -90,13 +114,14 @@ pub fn parse_stream_line(line: &str) -> Option<StreamEvent> {
         }
 
         "result" => {
-            let result = obj.get("result")?;
-            let cost_usd = result.get("cost_usd").and_then(|v| v.as_f64());
-            let session_id = result
+            // Result fields are at the top level of the event object,
+            // NOT nested under a "result" key.
+            let cost_usd = obj.get("cost_usd").and_then(|v| v.as_f64());
+            let session_id = obj
                 .get("session_id")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let duration_ms = result.get("duration_ms").and_then(|v| v.as_u64());
+            let duration_ms = obj.get("duration_ms").and_then(|v| v.as_u64());
 
             Some(StreamEvent::Result {
                 cost_usd,

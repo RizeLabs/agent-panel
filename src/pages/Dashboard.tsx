@@ -167,13 +167,16 @@ export default function Dashboard() {
           </div>
         ) : recentMessages.length > 0 ? (
           <div className="space-y-2">
-            {recentMessages.map((msg: Message) => (
+            {recentMessages.map((msg: Message) => {
+              const agent = agents?.find((a: Agent) => a.id === msg.from_agent);
+              const displayName = agent?.name ?? msg.from_agent;
+              return (
               <div
                 key={msg.id}
                 className="flex items-start gap-3 bg-panel-bg border border-panel-border rounded-md px-3 py-2"
               >
-                <span className="text-[11px] text-panel-accent font-medium shrink-0 w-20 truncate">
-                  {msg.from_agent}
+                <span className="text-[11px] text-panel-accent font-medium shrink-0 max-w-[100px] truncate" title={displayName}>
+                  {displayName}
                 </span>
                 <span className="text-[10px] bg-panel-border/50 text-panel-text-dim rounded px-1.5 py-0.5 shrink-0 capitalize">
                   {msg.message_type.replace("_", " ")}
@@ -185,7 +188,8 @@ export default function Dashboard() {
                   {timeAgo(msg.created_at)}
                 </span>
               </div>
-            ))}
+            );
+            })}
           </div>
         ) : (
           <p className="text-xs text-panel-text-dim text-center py-4">
